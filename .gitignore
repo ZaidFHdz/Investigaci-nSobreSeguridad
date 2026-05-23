@@ -1,0 +1,16 @@
+*
+
+!app_dashboard.py
+!REPORTE_LIMPIO_FINAL.parquet
+!requirements.txt
+!README.md
+!.gitignore
+!.streamlit/
+!.streamlit/config.toml
+
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+.dashboard_state.json
+.venv*/
+venv/
