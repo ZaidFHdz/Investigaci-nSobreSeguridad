@@ -15,7 +15,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.05"
+APP_VERSION = "V1.06"
 
 
 def cargar_estado_persistente():
@@ -196,6 +196,17 @@ st.markdown("""
     .block-container {
         max-width: 1440px;
         padding: 2.25rem 3rem 3rem;
+    }
+
+    .sidebar-hotzone {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 24px;
+        height: 100vh;
+        z-index: 999997;
+        background: transparent;
+        pointer-events: auto;
     }
 
     #MainMenu,
@@ -2591,9 +2602,68 @@ components.html(
 
         let timer;
         let refreshTimer;
+        let sidebarOpenTimer;
         const markAiPositionNow = () => {
             win.sessionStorage.setItem("dashboardAiSendY", String(win.scrollY));
             win.sessionStorage.setItem("dashboardAiSendAt", String(Date.now()));
+        };
+
+        const getSidebarWidth = () => {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            if (!sidebar) return 0;
+            const rect = sidebar.getBoundingClientRect();
+            const styles = win.getComputedStyle(sidebar);
+            if (styles.display === "none" || styles.visibility === "hidden") return 0;
+            return rect.width;
+        };
+
+        const findSidebarOpenButton = () => {
+            const selectors = [
+                '[data-testid="stSidebarCollapsedControl"] button',
+                'button[data-testid="stSidebarCollapsedControl"]',
+                '[data-testid="collapsedControl"] button',
+                'button[data-testid="collapsedControl"]',
+                'button[kind="headerNoPadding"]',
+                'button[data-testid="stBaseButton-headerNoPadding"]',
+                'button[data-testid="baseButton-headerNoPadding"]'
+            ];
+            for (const selector of selectors) {
+                const button = doc.querySelector(selector);
+                if (button) return button;
+            }
+            return null;
+        };
+
+        const openSidebarFromEdge = () => {
+            if (getSidebarWidth() > 80) return;
+            win.clearTimeout(sidebarOpenTimer);
+            sidebarOpenTimer = win.setTimeout(() => {
+                if (getSidebarWidth() > 80) return;
+                const button = findSidebarOpenButton();
+                if (button) button.click();
+            }, 90);
+        };
+
+        const ensureSidebarHotzone = () => {
+            let hotzone = doc.querySelector(".sidebar-hotzone");
+            if (!hotzone) {
+                hotzone = doc.createElement("div");
+                hotzone.className = "sidebar-hotzone";
+                hotzone.setAttribute("aria-hidden", "true");
+                Object.assign(hotzone.style, {
+                    position: "fixed",
+                    top: "0",
+                    left: "0",
+                    width: "24px",
+                    height: "100vh",
+                    zIndex: "999997",
+                    background: "transparent",
+                    pointerEvents: "auto"
+                });
+                doc.body.appendChild(hotzone);
+                hotzone.addEventListener("mouseenter", openSidebarFromEdge);
+                hotzone.addEventListener("mousemove", openSidebarFromEdge);
+            }
         };
 
         const scheduleSync = () => {
@@ -2682,6 +2752,10 @@ components.html(
             }
         }, true);
 
+        doc.addEventListener("mousemove", (event) => {
+            if (event.clientX <= 16) openSidebarFromEdge();
+        }, true);
+
         doc.addEventListener("click", (event) => {
             const link = event.target.closest('.side-nav a[href^="#"]');
             if (!link) return;
@@ -2695,6 +2769,7 @@ components.html(
 
         new MutationObserver(() => {
             scheduleSync();
+            ensureSidebarHotzone();
             maybeScrollToAiResponse();
             maybeScrollToReport();
         }).observe(doc.body, {
@@ -2704,6 +2779,7 @@ components.html(
         });
 
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
+        ensureSidebarHotzone();
         scheduleSync();
         maybeScrollToAiResponse();
         maybeScrollToReport();
