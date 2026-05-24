@@ -15,7 +15,7 @@ except ImportError:
     genai = None
 
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.08"
+APP_VERSION = "V1.09"
 CLIENT_STATE_PARAM = "client_state"
 
 
@@ -224,6 +224,33 @@ st.markdown("""
         padding: 2.25rem 3rem 3rem;
     }
 
+    .sidebar-hover-zone {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 76px;
+        z-index: 999;
+        pointer-events: auto;
+        background: transparent;
+    }
+
+    .sidebar-hover-zone::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 8px;
+        background: var(--app-border);
+        opacity: 0.55;
+        transition: width 180ms ease, opacity 180ms ease, background-color 180ms ease;
+    }
+
+    .sidebar-hover-zone:hover::after {
+        width: 14px;
+        opacity: 0.9;
+        background: var(--app-invert);
+    }
+
     #MainMenu,
     footer,
     div[data-testid="stToolbar"],
@@ -280,52 +307,23 @@ st.markdown("""
     div[data-testid="stSidebarCollapseButton"] button,
     div[data-testid="stSidebarCollapsedControl"] button,
     div[data-testid="collapsedControl"] button {
-        width: 2.25rem;
-        height: 2.25rem;
-        border: 1px solid var(--app-border) !important;
-        border-radius: 8px !important;
-        background: var(--app-panel) !important;
-        color: var(--app-text) !important;
-        opacity: 1 !important;
-        box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
-        position: relative !important;
-        z-index: 50 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        width: 1px !important;
+        height: 1px !important;
+        border: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
     }
 
     div[data-testid="stSidebarHeader"],
     div[data-testid="stSidebarCollapseButton"],
     div[data-testid="stSidebarCollapsedControl"],
     div[data-testid="collapsedControl"] {
-        align-items: flex-start !important;
-        padding-top: 0.65rem !important;
-    }
-
-    button[data-testid="stBaseButton-headerNoPadding"] *,
-    button[data-testid="baseButton-headerNoPadding"] *,
-    button[kind="headerNoPadding"] *,
-    button[data-testid="stSidebarCollapseButton"] *,
-    button[data-testid="stSidebarCollapsedControl"] *,
-    button[data-testid="collapsedControl"] *,
-    div[data-testid="stSidebarCollapseButton"] button *,
-    div[data-testid="stSidebarCollapsedControl"] button *,
-    div[data-testid="collapsedControl"] button * {
-        color: var(--app-text) !important;
-        fill: var(--app-text) !important;
-        stroke: var(--app-text) !important;
-        opacity: 1 !important;
-    }
-
-    button[data-testid="stBaseButton-headerNoPadding"]:hover,
-    button[data-testid="baseButton-headerNoPadding"]:hover,
-    button[kind="headerNoPadding"]:hover,
-    button[data-testid="stSidebarCollapseButton"]:hover,
-    button[data-testid="stSidebarCollapsedControl"]:hover,
-    button[data-testid="collapsedControl"]:hover,
-    div[data-testid="stSidebarCollapseButton"] button:hover,
-    div[data-testid="stSidebarCollapsedControl"] button:hover,
-    div[data-testid="collapsedControl"] button:hover {
-        border-color: var(--app-invert) !important;
-        background: var(--app-soft) !important;
+        min-height: 0 !important;
+        height: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
     }
 
     section[data-testid="stSidebar"] h2,
@@ -358,6 +356,24 @@ st.markdown("""
 
     div[data-testid="stMarkdownContainer"] p {
         color: var(--app-muted);
+    }
+
+    div[data-testid="stMarkdownContainer"] p,
+    label,
+    .app-subtitle,
+    .generated-chart-note,
+    div[data-testid="stCaptionContainer"],
+    div[data-testid="stAlert"] {
+        transition: transform 180ms ease, color 180ms ease, opacity 180ms ease;
+    }
+
+    div[data-testid="stMarkdownContainer"] p:hover,
+    label:hover,
+    .app-subtitle:hover,
+    .generated-chart-note:hover,
+    div[data-testid="stCaptionContainer"]:hover,
+    div[data-testid="stAlert"]:hover {
+        transform: translateY(-1px);
     }
 
     div[data-baseweb="select"] > div,
@@ -397,6 +413,12 @@ st.markdown("""
         background: var(--app-panel);
         border: 1px solid var(--app-border);
         color: var(--app-text);
+    }
+
+    div[data-baseweb="popover"]:has([aria-disabled="true"]),
+    div[data-baseweb="popover"]:has([role="option"][aria-disabled="true"]),
+    ul[role="listbox"]:has([aria-disabled="true"]) {
+        display: none !important;
     }
 
     li[role="option"],
@@ -835,9 +857,28 @@ st.markdown(
 
     section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
         min-height: 4.25rem !important;
+        height: auto !important;
+        max-height: 15rem !important;
         align-items: flex-start !important;
         padding-top: 0.45rem !important;
         padding-bottom: 0.45rem !important;
+        overflow-y: auto !important;
+        scrollbar-width: thin;
+        scrollbar-color: var(--app-muted) transparent;
+    }}
+
+    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div::-webkit-scrollbar {{
+        width: 8px;
+    }}
+
+    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div::-webkit-scrollbar-thumb {{
+        background: var(--app-muted);
+        border-radius: 999px;
+    }}
+
+    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div > div:first-child {{
+        align-content: flex-start !important;
+        overflow: visible !important;
     }}
 
     section[data-testid="stSidebar"] [data-baseweb="tag"] {{
@@ -1019,6 +1060,28 @@ def hay_variacion_suficiente(df, columnas):
 
 def mostrar_no_disponible(mensaje):
     st.info(mensaje)
+
+
+def mostrar_nota_ceros(df, columnas, contexto="esta gráfica", umbral=0.28):
+    if df is None or df.empty:
+        return
+
+    columnas_validas = [col for col in columnas if col in df.columns]
+    if not columnas_validas:
+        return
+
+    total = 0
+    ceros = 0
+    for columna in columnas_validas:
+        serie = pd.to_numeric(df[columna], errors="coerce").dropna()
+        total += int(serie.size)
+        ceros += int((serie == 0).sum())
+
+    if total and ceros / total >= umbral:
+        st.caption(
+            f"Nota: {contexto} contiene muchos valores en 0. "
+            "Puede indicar ausencia de datos, registros no disponibles o una categoría sin observaciones para los filtros actuales."
+        )
 
 
 def restaurar_widget_desde_cliente(clave, opciones=None, default=None):
@@ -2046,9 +2109,68 @@ components.html(
 
         let timer;
         let refreshTimer;
+        let sidebarHoverTimer;
         const scheduleSync = () => {
             win.clearTimeout(timer);
             timer = win.setTimeout(syncPlotTheme, 120);
+        };
+
+        const getSidebarWidth = () => {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            if (!sidebar) return 0;
+            const rect = sidebar.getBoundingClientRect();
+            const styles = win.getComputedStyle(sidebar);
+            if (styles.display === "none" || styles.visibility === "hidden") return 0;
+            return rect.width;
+        };
+
+        const findSidebarButton = () => {
+            const selectors = [
+                '[data-testid="stSidebarCollapseButton"] button',
+                'button[data-testid="stSidebarCollapseButton"]',
+                '[data-testid="stSidebarCollapsedControl"] button',
+                'button[data-testid="stSidebarCollapsedControl"]',
+                '[data-testid="collapsedControl"] button',
+                'button[data-testid="collapsedControl"]',
+                'button[kind="headerNoPadding"]',
+                'button[data-testid="stBaseButton-headerNoPadding"]',
+                'button[data-testid="baseButton-headerNoPadding"]'
+            ];
+            for (const selector of selectors) {
+                const button = doc.querySelector(selector);
+                if (button) return button;
+            }
+            return null;
+        };
+
+        const openSidebarFromEdge = () => {
+            win.clearTimeout(sidebarHoverTimer);
+            sidebarHoverTimer = win.setTimeout(() => {
+                if (getSidebarWidth() > 80) return;
+                const button = findSidebarButton();
+                if (button) button.click();
+            }, 70);
+        };
+
+        const closeSidebarFromAway = () => {
+            win.clearTimeout(sidebarHoverTimer);
+            sidebarHoverTimer = win.setTimeout(() => {
+                if (getSidebarWidth() <= 80) return;
+                const button = findSidebarButton();
+                if (button) button.click();
+            }, 220);
+        };
+
+        const ensureSidebarHoverZone = () => {
+            let zone = doc.querySelector(".sidebar-hover-zone");
+            if (!zone) {
+                zone = doc.createElement("div");
+                zone.className = "sidebar-hover-zone";
+                zone.setAttribute("aria-hidden", "true");
+                doc.body.appendChild(zone);
+                zone.addEventListener("mouseenter", openSidebarFromEdge);
+                zone.addEventListener("mousemove", openSidebarFromEdge);
+            }
         };
 
         const ensureRefreshOverlay = () => {
@@ -2123,10 +2245,34 @@ components.html(
             win.history.replaceState(null, "", `#${id}`);
         }, true);
 
+        doc.addEventListener("mousemove", (event) => {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            const width = getSidebarWidth();
+            if (event.clientX <= 76) {
+                openSidebarFromEdge();
+                return;
+            }
+            if (sidebar && width > 80) {
+                const rect = sidebar.getBoundingClientRect();
+                if (event.clientX > rect.right + 46) closeSidebarFromAway();
+            }
+        }, true);
+
+        doc.addEventListener("wheel", (event) => {
+            const multiselect = event.target.closest('div[data-testid="stMultiSelect"]');
+            if (!multiselect) return;
+            const scrollBox = multiselect.querySelector('div[data-baseweb="select"] > div');
+            if (!scrollBox || scrollBox.scrollHeight <= scrollBox.clientHeight + 2) return;
+            scrollBox.scrollTop += event.deltaY;
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false, capture: true });
+
         new MutationObserver(() => {
             doc.querySelectorAll('[title="streamlitApp"]').forEach((node) => node.removeAttribute("title"));
             syncDesktopGate();
             ensureRefreshOverlay();
+            ensureSidebarHoverZone();
             scheduleSync();
             maybeScrollToAiResponse();
         }).observe(doc.body, {
@@ -2139,6 +2285,7 @@ components.html(
         win.matchMedia("(pointer: coarse)").addEventListener("change", syncDesktopGate);
         win.matchMedia("(hover: none)").addEventListener("change", syncDesktopGate);
         ensureRefreshOverlay();
+        ensureSidebarHoverZone();
         scheduleSync();
         maybeScrollToAiResponse();
     })();
@@ -2195,6 +2342,7 @@ if (
     aplicar_estilo_figura(fig_envipe)
     ajustar_legenda_larga(fig_envipe, df_inseguro)
     st.plotly_chart(fig_envipe, width="stretch", theme=None)
+    mostrar_nota_ceros(df_inseguro, ["ENV_Estimaciones puntuales"], "la evolución ENVIPE")
 else:
     mostrar_no_disponible("No hay suficientes años o datos de ENVIPE para dibujar la evolución.")
 
@@ -2242,6 +2390,7 @@ if not df_sexo_env.empty and "ENV_Estimaciones puntuales" in df_sexo_env.columns
     fig_sexo.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig_sexo)
     st.plotly_chart(fig_sexo, width="stretch", theme=None)
+    mostrar_nota_ceros(df_sexo_env, ["ENV_Estimaciones puntuales"], "la comparación por sexo")
 
 # --- SECCION 2: CIFRA NEGRA ---
 st.markdown("""
@@ -2303,6 +2452,7 @@ if cols_cn:
             aplicar_estilo_figura(fig_cn)
             ajustar_legenda_larga(fig_cn, df_cn_plot)
             st.plotly_chart(fig_cn, width="stretch", theme=None)
+            mostrar_nota_ceros(df_cn_plot, ["Valor"], "la tendencia de cifra negra")
         else:
             mostrar_no_disponible("No hay suficientes años o datos de cifra negra para el delito seleccionado.")
     else:
@@ -2362,6 +2512,7 @@ if "IE" in nivel_incidencia:
             aplicar_estilo_figura(fig_ie)
             ajustar_legenda_larga(fig_ie, df_ie)
             st.plotly_chart(fig_ie, width="stretch", theme=None)
+            mostrar_nota_ceros(df_ie, ["Tasa_Incidencia"], "la incidencia general")
         else:
             mostrar_no_disponible("No hay suficientes años o datos de incidencia general para los filtros seleccionados.")
     else:
@@ -2430,6 +2581,7 @@ else:
                 aplicar_estilo_figura(fig_itd)
                 ajustar_legenda_larga(fig_itd, df_itd_plot)
                 st.plotly_chart(fig_itd, width="stretch", theme=None)
+                mostrar_nota_ceros(df_itd_plot, ["Tasa_Incidencia"], "la incidencia específica")
         else:
             mostrar_no_disponible("No se detectaron delitos de incidencia específica.")
     else:
@@ -2592,7 +2744,7 @@ if cols_ie and cols_cn and cols_itd:
             st.divider()
 
             # --- GRÁFICA 1: BURBUJAS ---
-            st.markdown("### 1. El Panorama Completo (Burbujas)")
+            st.markdown("### 1. Panorama Personalizable (Burbujas)")
             opciones_burbuja = list(metricas_cruce.keys())
             opciones_color_burbuja = ["Entidad federativa", "Año", "Delito"]
             for clave, opciones in {
@@ -2674,6 +2826,11 @@ if cols_ie and cols_cn and cols_itd:
             if burbuja_color == "Entidad federativa":
                 ajustar_legenda_larga(fig_bubble, df_master)
             st.plotly_chart(fig_bubble, width="stretch", theme=None)
+            mostrar_nota_ceros(
+                df_master,
+                [burbuja_x, burbuja_y, burbuja_tamano],
+                "el panorama personalizable"
+            )
 
             st.divider()
 
@@ -2682,7 +2839,7 @@ if cols_ie and cols_cn and cols_itd:
 
             with col1:
                 # --- GRÁFICA 2: BARRAS AGRUPADAS ---
-                st.markdown("### 2. Percepción vs Cifra Negra")
+                st.markdown("### 2. Comparación Personalizable Por Entidad")
                 for clave in ["tab4_grafica2_metrica_a", "tab4_grafica2_metrica_b"]:
                     restaurar_widget_desde_cliente(clave, list(metricas_cruce.keys()))
 
@@ -2744,10 +2901,15 @@ if cols_ie and cols_cn and cols_itd:
                     )
                 )
                 st.plotly_chart(fig_bar, width="stretch", theme=None)
+                mostrar_nota_ceros(
+                    df_barras,
+                    [metrica_barra_a, metrica_barra_b],
+                    "la comparación por entidad"
+                )
 
             with col2:
                 # --- GRÁFICA 3: PASTEL ---
-                st.markdown("### 3. Proporción De Denuncias")
+                st.markdown("### 3. Proporción Personalizable")
                 opciones_pastel = ["Cifra_Negra", "Percepcion"]
                 restaurar_widget_desde_cliente("tab4_grafica3_metrica", opciones_pastel)
                 metrica_pastel = st.selectbox(
@@ -2813,11 +2975,16 @@ if cols_ie and cols_cn and cols_itd:
                     )
                 )
                 st.plotly_chart(fig_pie, width="stretch", theme=None)
+                mostrar_nota_ceros(
+                    df_master,
+                    [metrica_pastel],
+                    "la proporción personalizable"
+                )
 
             st.divider()
 
             # --- GRÁFICA 4: LÍNEAS DE TENDENCIA COMPARATIVA ---
-            st.markdown("### 4. Líneas De Tendencia: Cifra Negra vs Incidencia Específica")
+            st.markdown("### 4. Tendencias Personalizables")
             for clave in ["tab4_linea_a", "tab4_linea_b"]:
                 restaurar_widget_desde_cliente(clave, list(metricas_cruce.keys()))
 
@@ -2907,11 +3074,16 @@ if cols_ie and cols_cn and cols_itd:
                     )
                 )
                 st.plotly_chart(fig_lines, width="stretch", theme=None)
+                mostrar_nota_ceros(
+                    df_lineas,
+                    [linea_a, linea_b],
+                    "las tendencias personalizables"
+                )
 
                 st.divider()
 
             # --- GRÁFICA 5: CORRELACIONES CONFIGURABLES ---
-            st.markdown("### 5. Correlaciones Configurables")
+            st.markdown("### 5. Matriz De Correlación Personalizable")
 
             metricas_correlacion = {
                 "Percepcion": "Percepción de inseguridad (%)",
@@ -3026,12 +3198,17 @@ if cols_ie and cols_cn and cols_itd:
                     zeroline=False,
                 )
                 st.plotly_chart(fig_corr, width="stretch", theme=None)
+                mostrar_nota_ceros(
+                    df_corr_base,
+                    variables_corr,
+                    "la matriz de correlación"
+                )
 
                 mostrar_tabla_correlacion(matriz_corr)
             else:
                 st.info("Selecciona al menos dos variables para calcular la matriz.")
 
-            st.markdown("### 6. Dispersión A La Medida")
+            st.markdown("### 6. Dispersión Personalizable")
 
             col_scatter1, col_scatter2, col_scatter3, col_scatter4 = st.columns(4)
             variables_disponibles = list(metricas_correlacion.keys())
@@ -3139,6 +3316,14 @@ if cols_ie and cols_cn and cols_itd:
                 if color_por == "Entidad federativa":
                     ajustar_legenda_larga(fig_scatter_corr, df_scatter)
                 st.plotly_chart(fig_scatter_corr, width="stretch", theme=None)
+                columnas_ceros_scatter = [eje_x, eje_y]
+                if tamano != "Ninguno":
+                    columnas_ceros_scatter.append(tamano)
+                mostrar_nota_ceros(
+                    df_scatter,
+                    columnas_ceros_scatter,
+                    "la dispersión personalizable"
+                )
             else:
                 mostrar_no_disponible("No hay variación suficiente para calcular esta correlación.")
 
