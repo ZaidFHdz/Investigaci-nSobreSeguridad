@@ -15,7 +15,7 @@ except ImportError:
     genai = None
 
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.09"
+APP_VERSION = "V1.10"
 CLIENT_STATE_PARAM = "client_state"
 
 
@@ -188,67 +188,9 @@ st.markdown("""
         display: none !important;
     }
 
-    div[data-testid="stAppViewContainer"],
-    div[data-testid="stMain"],
-    section[data-testid="stSidebar"],
-    header[data-testid="stHeader"],
-    .block-container {
-        transition: filter 220ms ease, opacity 220ms ease, background-color 220ms ease;
-    }
-
-    body.app-refreshing-all div[data-testid="stAppViewContainer"],
-    body.app-refreshing-all section[data-testid="stSidebar"],
-    body.app-refreshing-all header[data-testid="stHeader"] {
-        filter: blur(2.4px) brightness(0.76);
-        opacity: 0.86;
-    }
-
-    .refresh-fade-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 999996;
-        pointer-events: none;
-        opacity: 0;
-        background: rgba(0, 0, 0, 0.12);
-        backdrop-filter: blur(1.4px);
-        -webkit-backdrop-filter: blur(1.4px);
-        transition: opacity 220ms ease;
-    }
-
-    body.app-refreshing-all .refresh-fade-overlay {
-        opacity: 1;
-    }
-
     .block-container {
         max-width: 1440px;
         padding: 2.25rem 3rem 3rem;
-    }
-
-    .sidebar-hover-zone {
-        position: fixed;
-        inset: 0 auto 0 0;
-        width: 76px;
-        z-index: 999;
-        pointer-events: auto;
-        background: transparent;
-    }
-
-    .sidebar-hover-zone::after {
-        content: "";
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 0;
-        width: 8px;
-        background: var(--app-border);
-        opacity: 0.55;
-        transition: width 180ms ease, opacity 180ms ease, background-color 180ms ease;
-    }
-
-    .sidebar-hover-zone:hover::after {
-        width: 14px;
-        opacity: 0.9;
-        background: var(--app-invert);
     }
 
     #MainMenu,
@@ -307,23 +249,54 @@ st.markdown("""
     div[data-testid="stSidebarCollapseButton"] button,
     div[data-testid="stSidebarCollapsedControl"] button,
     div[data-testid="collapsedControl"] button {
-        opacity: 0 !important;
-        pointer-events: none !important;
-        width: 1px !important;
-        height: 1px !important;
-        border: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
+        width: 2.25rem !important;
+        height: 2.25rem !important;
+        border: 1px solid var(--app-border) !important;
+        border-radius: 8px !important;
+        background: var(--app-panel) !important;
+        color: var(--app-text) !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
     }
 
     div[data-testid="stSidebarHeader"],
     div[data-testid="stSidebarCollapseButton"],
     div[data-testid="stSidebarCollapsedControl"],
     div[data-testid="collapsedControl"] {
-        min-height: 0 !important;
-        height: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
+        align-items: flex-start !important;
+        min-height: 2.25rem !important;
+        height: 2.25rem !important;
+        padding-top: 0.65rem !important;
+        overflow: visible !important;
+    }
+
+    button[data-testid="stBaseButton-headerNoPadding"] *,
+    button[data-testid="baseButton-headerNoPadding"] *,
+    button[kind="headerNoPadding"] *,
+    button[data-testid="stSidebarCollapseButton"] *,
+    button[data-testid="stSidebarCollapsedControl"] *,
+    button[data-testid="collapsedControl"] *,
+    div[data-testid="stSidebarCollapseButton"] button *,
+    div[data-testid="stSidebarCollapsedControl"] button *,
+    div[data-testid="collapsedControl"] button * {
+        color: var(--app-text) !important;
+        fill: var(--app-text) !important;
+        stroke: var(--app-text) !important;
+        opacity: 1 !important;
+    }
+
+    button[data-testid="stBaseButton-headerNoPadding"]:hover,
+    button[data-testid="baseButton-headerNoPadding"]:hover,
+    button[kind="headerNoPadding"]:hover,
+    button[data-testid="stSidebarCollapseButton"]:hover,
+    button[data-testid="stSidebarCollapsedControl"]:hover,
+    button[data-testid="collapsedControl"]:hover,
+    div[data-testid="stSidebarCollapseButton"] button:hover,
+    div[data-testid="stSidebarCollapsedControl"] button:hover,
+    div[data-testid="collapsedControl"] button:hover {
+        border-color: var(--app-invert) !important;
+        background: var(--app-soft) !important;
     }
 
     section[data-testid="stSidebar"] h2,
@@ -509,7 +482,7 @@ st.markdown("""
         border-radius: 8px;
         padding: 0.55rem 0.75rem;
         background: var(--app-panel);
-        margin: -2.72rem 2.75rem 0.75rem 0;
+        margin: 0.2rem 3.1rem 0.75rem 0;
         min-height: 2.25rem;
         display: flex;
         flex-direction: column;
@@ -2108,88 +2081,9 @@ components.html(
         };
 
         let timer;
-        let refreshTimer;
-        let sidebarHoverTimer;
         const scheduleSync = () => {
             win.clearTimeout(timer);
             timer = win.setTimeout(syncPlotTheme, 120);
-        };
-
-        const getSidebarWidth = () => {
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
-            if (!sidebar) return 0;
-            const rect = sidebar.getBoundingClientRect();
-            const styles = win.getComputedStyle(sidebar);
-            if (styles.display === "none" || styles.visibility === "hidden") return 0;
-            return rect.width;
-        };
-
-        const findSidebarButton = () => {
-            const selectors = [
-                '[data-testid="stSidebarCollapseButton"] button',
-                'button[data-testid="stSidebarCollapseButton"]',
-                '[data-testid="stSidebarCollapsedControl"] button',
-                'button[data-testid="stSidebarCollapsedControl"]',
-                '[data-testid="collapsedControl"] button',
-                'button[data-testid="collapsedControl"]',
-                'button[kind="headerNoPadding"]',
-                'button[data-testid="stBaseButton-headerNoPadding"]',
-                'button[data-testid="baseButton-headerNoPadding"]'
-            ];
-            for (const selector of selectors) {
-                const button = doc.querySelector(selector);
-                if (button) return button;
-            }
-            return null;
-        };
-
-        const openSidebarFromEdge = () => {
-            win.clearTimeout(sidebarHoverTimer);
-            sidebarHoverTimer = win.setTimeout(() => {
-                if (getSidebarWidth() > 80) return;
-                const button = findSidebarButton();
-                if (button) button.click();
-            }, 70);
-        };
-
-        const closeSidebarFromAway = () => {
-            win.clearTimeout(sidebarHoverTimer);
-            sidebarHoverTimer = win.setTimeout(() => {
-                if (getSidebarWidth() <= 80) return;
-                const button = findSidebarButton();
-                if (button) button.click();
-            }, 220);
-        };
-
-        const ensureSidebarHoverZone = () => {
-            let zone = doc.querySelector(".sidebar-hover-zone");
-            if (!zone) {
-                zone = doc.createElement("div");
-                zone.className = "sidebar-hover-zone";
-                zone.setAttribute("aria-hidden", "true");
-                doc.body.appendChild(zone);
-                zone.addEventListener("mouseenter", openSidebarFromEdge);
-                zone.addEventListener("mousemove", openSidebarFromEdge);
-            }
-        };
-
-        const ensureRefreshOverlay = () => {
-            let overlay = doc.querySelector(".refresh-fade-overlay");
-            if (!overlay) {
-                overlay = doc.createElement("div");
-                overlay.className = "refresh-fade-overlay";
-                overlay.setAttribute("aria-hidden", "true");
-                doc.body.appendChild(overlay);
-            }
-        };
-
-        const animateRefresh = () => {
-            ensureRefreshOverlay();
-            doc.body.classList.add("app-refreshing-all");
-            win.clearTimeout(refreshTimer);
-            refreshTimer = win.setTimeout(() => {
-                doc.body.classList.remove("app-refreshing-all");
-            }, 900);
         };
 
         const markAiSendPosition = (event) => {
@@ -2218,19 +2112,10 @@ components.html(
             }
         };
 
-        doc.addEventListener("change", (event) => {
-            if (event.target.closest('input, select, textarea, [data-baseweb="select"]')) {
-                animateRefresh();
-            }
-        }, true);
-
         doc.addEventListener("click", (event) => {
             markAiSendPosition(event);
             if (event.target.closest(".reset-link")) {
                 win.localStorage.removeItem(stateKey);
-            }
-            if (event.target.closest('button, [role="option"], [data-baseweb="tag"]')) {
-                animateRefresh();
             }
         }, true);
 
@@ -2243,19 +2128,6 @@ components.html(
             event.preventDefault();
             target.scrollIntoView({ behavior: "smooth", block: "start" });
             win.history.replaceState(null, "", `#${id}`);
-        }, true);
-
-        doc.addEventListener("mousemove", (event) => {
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
-            const width = getSidebarWidth();
-            if (event.clientX <= 76) {
-                openSidebarFromEdge();
-                return;
-            }
-            if (sidebar && width > 80) {
-                const rect = sidebar.getBoundingClientRect();
-                if (event.clientX > rect.right + 46) closeSidebarFromAway();
-            }
         }, true);
 
         doc.addEventListener("wheel", (event) => {
@@ -2271,8 +2143,6 @@ components.html(
         new MutationObserver(() => {
             doc.querySelectorAll('[title="streamlitApp"]').forEach((node) => node.removeAttribute("title"));
             syncDesktopGate();
-            ensureRefreshOverlay();
-            ensureSidebarHoverZone();
             scheduleSync();
             maybeScrollToAiResponse();
         }).observe(doc.body, {
@@ -2284,8 +2154,6 @@ components.html(
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
         win.matchMedia("(pointer: coarse)").addEventListener("change", syncDesktopGate);
         win.matchMedia("(hover: none)").addEventListener("change", syncDesktopGate);
-        ensureRefreshOverlay();
-        ensureSidebarHoverZone();
         scheduleSync();
         maybeScrollToAiResponse();
     })();
