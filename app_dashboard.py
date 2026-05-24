@@ -15,7 +15,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.01"
+APP_VERSION = "V1.02"
 
 
 def cargar_estado_persistente():
@@ -126,6 +126,16 @@ st.markdown("""
         font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: var(--app-bg);
         color: var(--app-text);
+    }
+
+    ::selection {
+        background: var(--app-invert) !important;
+        color: var(--app-invert-text) !important;
+    }
+
+    ::-moz-selection {
+        background: var(--app-invert) !important;
+        color: var(--app-invert-text) !important;
     }
 
     div[data-testid="stAppViewContainer"],
