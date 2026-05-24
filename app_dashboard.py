@@ -1,7 +1,7 @@
 import streamlit as st
+import base64
 import html
 import json
-import re
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -14,50 +14,47 @@ try:
 except ImportError:
     genai = None
 
-ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.07"
+APP_VERSION = "V1.08"
+CLIENT_STATE_PARAM = "client_state"
 
 
 def cargar_estado_persistente():
-    if not ESTADO_DASHBOARD.exists():
+    estado_codificado = st.query_params.get(CLIENT_STATE_PARAM, "")
+    if not estado_codificado:
         return {}
 
     try:
-        return json.loads(ESTADO_DASHBOARD.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        padding = "=" * (-len(estado_codificado) % 4)
+        estado_json = base64.urlsafe_b64decode(
+            (estado_codificado + padding).encode("utf-8")
+        ).decode("utf-8")
+        estado = json.loads(estado_json)
+        return estado if isinstance(estado, dict) else {}
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         return {}
 
 
-def guardar_estado_persistente(estado):
-    try:
-        ESTADO_DASHBOARD.write_text(
-            json.dumps(
-                estado,
-                ensure_ascii=False,
-                indent=2,
-                default=lambda valor: valor.item() if hasattr(valor, "item") else str(valor),
-            ),
-            encoding="utf-8"
-        )
-    except OSError:
-        pass
+def codificar_estado_cliente(estado):
+    estado_json = json.dumps(
+        estado,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=lambda valor: valor.item() if hasattr(valor, "item") else str(valor),
+    )
+    return base64.urlsafe_b64encode(estado_json.encode("utf-8")).decode("utf-8").rstrip("=")
 
 
 def borrar_estado_persistente():
-    try:
-        ESTADO_DASHBOARD.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
-ESTADO_PERSISTENTE = cargar_estado_persistente()
+    pass
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Dashboard de Seguridad MX",
     layout="wide"
 )
+
+ESTADO_PERSISTENTE = cargar_estado_persistente()
 
 if st.query_params.get("reset_dashboard") == "1":
     borrar_estado_persistente()
@@ -72,10 +69,8 @@ if st.query_params.get("reset_dashboard") == "1":
         "chat_ia",
         "graficos_ia",
         "graficos_ia_specs",
-        "artefactos_ia_specs",
         "pregunta_ia_pendiente",
         "ai_autoscroll_ready",
-        "report_autoscroll_ready",
     ]:
         st.session_state.pop(clave, None)
     st.query_params.clear()
@@ -130,14 +125,48 @@ st.markdown("""
         color: var(--app-text);
     }
 
-    ::selection {
-        background: var(--app-invert) !important;
-        color: var(--app-invert-text) !important;
+    .desktop-only-blocker {
+        display: none;
     }
 
-    ::-moz-selection {
-        background: var(--app-invert) !important;
-        color: var(--app-invert-text) !important;
+    body.non-desktop-device .desktop-only-blocker {
+        position: fixed;
+        inset: 0;
+        z-index: 1000000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: var(--app-bg);
+        color: var(--app-text);
+    }
+
+    body.non-desktop-device .desktop-only-blocker-card {
+        width: min(100%, 34rem);
+        border: 1px solid var(--app-border);
+        border-radius: 8px;
+        background: var(--app-panel);
+        padding: 1.4rem;
+    }
+
+    body.non-desktop-device .desktop-only-blocker-card strong {
+        display: block;
+        color: var(--app-text);
+        font-size: 1.4rem;
+        line-height: 1.15;
+        margin-bottom: 0.65rem;
+    }
+
+    body.non-desktop-device .desktop-only-blocker-card p {
+        margin: 0;
+        color: var(--app-muted);
+        line-height: 1.55;
+    }
+
+    body.non-desktop-device div[data-testid="stAppViewContainer"],
+    body.non-desktop-device section[data-testid="stSidebar"],
+    body.non-desktop-device header[data-testid="stHeader"] {
+        display: none !important;
     }
 
     div[data-testid="stAppViewContainer"],
@@ -171,63 +200,9 @@ st.markdown("""
         opacity: 1;
     }
 
-    .mobile-blocker {
-        display: none;
-    }
-
-    @media (max-width: 760px) and (orientation: portrait) {
-        section[data-testid="stSidebar"],
-        header[data-testid="stHeader"] {
-            display: none !important;
-        }
-
-        .mobile-blocker {
-            position: fixed;
-            inset: 0;
-            z-index: 999999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 1.5rem;
-            background: var(--app-bg);
-            color: var(--app-text);
-        }
-
-        .mobile-blocker-card {
-            width: min(100%, 25rem);
-            border: 1px solid var(--app-border);
-            border-radius: 8px;
-            background: var(--app-panel);
-            padding: 1.25rem;
-        }
-
-        .mobile-blocker-card strong {
-            display: block;
-            font-size: 1.25rem;
-            margin-bottom: 0.55rem;
-        }
-
-        .mobile-blocker-card p {
-            margin: 0;
-            color: var(--app-muted);
-            line-height: 1.5;
-        }
-    }
-
     .block-container {
         max-width: 1440px;
         padding: 2.25rem 3rem 3rem;
-    }
-
-    .sidebar-hotzone {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 24px;
-        height: 100vh;
-        z-index: 999997;
-        background: transparent;
-        pointer-events: auto;
     }
 
     #MainMenu,
@@ -246,20 +221,6 @@ st.markdown("""
     header[data-testid="stHeader"] {
         background: transparent;
         height: 0 !important;
-    }
-
-    div[data-testid="stSidebarCollapsedControl"],
-    div[data-testid="collapsedControl"],
-    button[data-testid="stSidebarCollapsedControl"],
-    button[data-testid="collapsedControl"] {
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-        position: fixed !important;
-        top: 0.85rem !important;
-        left: 0.85rem !important;
-        z-index: 999998 !important;
     }
 
     section[data-testid="stSidebar"] {
@@ -507,7 +468,7 @@ st.markdown("""
         border-radius: 8px;
         padding: 0.55rem 0.75rem;
         background: var(--app-panel);
-        margin: -2.72rem 3.25rem 0.75rem 0;
+        margin: -2.72rem 2.75rem 0.75rem 0;
         min-height: 2.25rem;
         display: flex;
         flex-direction: column;
@@ -551,6 +512,43 @@ st.markdown("""
         background: var(--app-soft);
     }
 
+    .side-brand,
+    .sidebar-heading,
+    .side-nav a,
+    .reset-link,
+    .section-title h2 {
+        transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease, opacity 180ms ease;
+    }
+
+    .side-brand:hover,
+    .sidebar-heading:hover,
+    .side-nav a:hover,
+    .reset-link:hover {
+        transform: translateY(-1.5px);
+    }
+
+    .section-title:hover h2 {
+        transform: translateY(-2px);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .side-brand,
+        .sidebar-heading,
+        .side-nav a,
+        .reset-link,
+        .section-title h2 {
+            transition: none !important;
+        }
+
+        .side-brand:hover,
+        .sidebar-heading:hover,
+        .side-nav a:hover,
+        .reset-link:hover,
+        .section-title:hover h2 {
+            transform: none !important;
+        }
+    }
+
     .reset-link {
         display: block;
         width: 100%;
@@ -572,20 +570,19 @@ st.markdown("""
         color: #ffffff !important;
     }
 
+    .export-block {
+        border-top: 1px solid var(--app-border);
+        margin: -0.15rem 0 0;
+        padding-top: 0.55rem;
+    }
+
     .sidebar-version {
         border-top: 1px solid var(--app-border);
         color: var(--app-muted);
         font-size: 0.78rem;
         font-weight: 700;
-        letter-spacing: 0;
         margin-top: 1.2rem;
         padding-top: 0.75rem;
-    }
-
-    .export-block {
-        border-top: 1px solid var(--app-border);
-        margin: -0.15rem 0 0;
-        padding-top: 0.55rem;
     }
 
     .sidebar-heading {
@@ -676,75 +673,6 @@ st.markdown("""
         border-right: 0;
     }
 
-    .ai-report {
-        max-width: 980px;
-        color: var(--app-text);
-    }
-
-    .ai-report h1,
-    .ai-report h2,
-    .ai-report h3,
-    .ai-report p,
-    .ai-report li,
-    .ai-report strong {
-        color: var(--app-text) !important;
-    }
-
-    .ai-table-wrap {
-        width: 100%;
-        max-width: 100%;
-        overflow: auto;
-        border: 1px solid var(--app-border);
-        border-radius: 8px;
-        background: var(--app-panel);
-        margin: 0.75rem 0 1rem;
-    }
-
-    .ai-table {
-        width: 100%;
-        min-width: 720px;
-        border-collapse: collapse;
-        color: var(--app-text);
-        background: var(--app-panel);
-        font-size: 0.92rem;
-    }
-
-    .ai-table th,
-    .ai-table td {
-        padding: 0.72rem 0.8rem;
-        border-right: 1px solid var(--app-border);
-        border-bottom: 1px solid var(--app-border);
-        color: var(--app-text);
-        background: var(--app-panel);
-        text-align: right;
-        white-space: nowrap;
-    }
-
-    .ai-table th {
-        background: var(--app-soft);
-        color: var(--app-muted);
-        font-weight: 750;
-        text-align: left;
-    }
-
-    .ai-table tr:nth-child(even) td {
-        background: var(--app-soft);
-    }
-
-    .ai-table td:first-child,
-    .ai-table th:first-child {
-        text-align: left;
-    }
-
-    .ai-table tr:last-child td {
-        border-bottom: 0;
-    }
-
-    .ai-table th:last-child,
-    .ai-table td:last-child {
-        border-right: 0;
-    }
-
     div[data-testid="stPlotlyChart"] .main-svg text {
         fill: var(--app-text) !important;
     }
@@ -790,73 +718,23 @@ st.markdown("""
     }
 
     div[role="dialog"],
-    div[data-testid="stModal"],
-    div[data-baseweb="modal"],
-    div[data-baseweb="popover"] {
+    div[data-testid="stModal"] {
         background: var(--app-panel) !important;
         color: var(--app-text) !important;
         border: 1px solid var(--app-border) !important;
     }
 
     div[role="dialog"] *,
-    div[data-testid="stModal"] *,
-    div[data-baseweb="modal"] *,
-    div[data-baseweb="popover"] * {
+    div[data-testid="stModal"] * {
         color: var(--app-text) !important;
     }
 
     div[role="dialog"] button,
-    div[data-testid="stModal"] button,
-    div[data-baseweb="modal"] button,
-    div[data-baseweb="popover"] button {
+    div[data-testid="stModal"] button {
         background: var(--app-panel) !important;
         color: var(--app-text) !important;
         border: 1px solid var(--app-border) !important;
         opacity: 1 !important;
-    }
-
-    div[role="dialog"] button[kind="primary"],
-    div[data-testid="stModal"] button[kind="primary"],
-    div[data-baseweb="modal"] button[kind="primary"] {
-        background: var(--app-invert) !important;
-        color: var(--app-invert-text) !important;
-    }
-
-    div[role="dialog"] code,
-    div[role="dialog"] pre,
-    div[role="dialog"] span,
-    div[role="dialog"] kbd,
-    div[data-testid="stModal"] code,
-    div[data-testid="stModal"] pre,
-    div[data-testid="stModal"] span,
-    div[data-testid="stModal"] kbd,
-    div[data-baseweb="modal"] code,
-    div[data-baseweb="modal"] pre,
-    div[data-baseweb="modal"] span,
-    div[data-baseweb="modal"] kbd,
-    div[data-baseweb="popover"] code,
-    div[data-baseweb="popover"] pre,
-    div[data-baseweb="popover"] span,
-    div[data-baseweb="popover"] kbd {
-        background: var(--app-soft) !important;
-        color: var(--app-text) !important;
-    }
-
-    div[role="dialog"] code,
-    div[role="dialog"] pre,
-    div[role="dialog"] kbd,
-    div[data-testid="stModal"] code,
-    div[data-testid="stModal"] pre,
-    div[data-testid="stModal"] kbd,
-    div[data-baseweb="modal"] code,
-    div[data-baseweb="modal"] pre,
-    div[data-baseweb="modal"] kbd,
-    div[data-baseweb="popover"] code,
-    div[data-baseweb="popover"] pre,
-    div[data-baseweb="popover"] kbd {
-        border: 1px solid var(--app-border) !important;
-        border-radius: 4px !important;
-        padding: 0.08rem 0.25rem !important;
     }
 
     .chat-form {
@@ -867,10 +745,10 @@ st.markdown("""
 
 st.markdown(
     """
-    <div class="mobile-blocker">
-        <div class="mobile-blocker-card">
-            <strong>Vista No Disponible En Celular Vertical</strong>
-            <p>Este tablero necesita una pantalla ancha para leer filtros, gráficas y análisis. Úsalo en computadora o en iPad/tablet en horizontal.</p>
+    <div class="desktop-only-blocker">
+        <div class="desktop-only-blocker-card">
+            <strong>Disponible Solo En Computadora</strong>
+            <p>Este tablero está diseñado para mouse, teclado y pantalla amplia. Para evitar errores con filtros, gráficas y chat, ábrelo desde Windows, macOS, Linux o una computadora de escritorio/portátil.</p>
         </div>
     </div>
     """,
@@ -905,26 +783,31 @@ st.markdown(
         background: var(--app-panel) !important;
     }}
 
-    button:hover,
-    button:focus,
-    input:hover,
-    input:focus,
-    input:focus-visible,
-    textarea:hover,
-    textarea:focus,
-    textarea:focus-visible,
-    div[data-baseweb="select"] > div:hover,
-    div[data-baseweb="select"] > div:focus-within,
-    div[data-baseweb="input"] > div:focus-within {{
-        box-shadow: none !important;
-        outline: none !important;
+    section[data-testid="stSidebar"] {{
+        min-width: 23rem !important;
+        width: 23rem !important;
+    }}
+
+    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
+        min-height: 4.1rem !important;
+    }}
+
+    section[data-testid="stSidebar"] [data-baseweb="tag"] {{
+        max-width: 18rem !important;
+    }}
+
+    section[data-testid="stSidebar"] [data-baseweb="tag"] span {{
+        max-width: 15.5rem !important;
     }}
 
     button:hover,
     button:focus,
     div[data-baseweb="select"] > div:hover,
-    div[data-baseweb="select"] > div:focus-within {{
+    div[data-baseweb="select"] > div:focus-within,
+    div[data-baseweb="input"] > div:focus-within {{
         border-color: var(--app-invert) !important;
+        box-shadow: none !important;
+        outline: none !important;
     }}
 
     [data-baseweb="tag"] {{
@@ -943,13 +826,6 @@ st.markdown(
     div[data-testid="stDataFrame"] {{
         background: var(--app-panel) !important;
         border-color: var(--app-border) !important;
-    }}
-
-    .ai-table-wrap,
-    .ai-table,
-    .ai-table th,
-    .ai-table td {{
-        transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
     }}
 
     [data-testid="stNotificationContentError"],
@@ -980,21 +856,6 @@ st.markdown(
         color: var(--app-text) !important;
         border-color: var(--app-border) !important;
         caret-color: var(--app-text) !important;
-    }}
-
-    div[data-testid="stTextInput"] input:focus,
-    div[data-testid="stTextInput"] input:focus-visible,
-    div[data-testid="stTextInput"] input:invalid,
-    div[data-testid="stTextInput"] input[aria-invalid="true"],
-    div[data-testid="stTextInput"] div[data-baseweb="input"],
-    div[data-testid="stTextInput"] div[data-baseweb="input"] > div,
-    div[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
-    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within,
-    div[data-baseweb="input"][aria-invalid="true"],
-    div[data-baseweb="input"][data-invalid="true"] {{
-        border-color: var(--app-border) !important;
-        box-shadow: none !important;
-        outline: none !important;
     }}
 
     div[data-testid="stTextInput"] input::placeholder {{
@@ -1109,6 +970,25 @@ def hay_variacion_suficiente(df, columnas):
 
 def mostrar_no_disponible(mensaje):
     st.info(mensaje)
+
+
+def restaurar_widget_desde_cliente(clave, opciones=None, default=None):
+    if clave in st.session_state:
+        return
+
+    valor = ESTADO_PERSISTENTE.get(clave, default)
+    if valor is None:
+        return
+
+    if opciones is not None:
+        if isinstance(valor, list):
+            valor = [item for item in valor if item in opciones]
+            if not valor:
+                return
+        elif valor not in opciones:
+            return
+
+    st.session_state[clave] = valor
 
 
 def aplicar_estilo_figura(fig, altura=None):
@@ -1413,15 +1293,14 @@ Redacta un análisis ejecutivo claro, sobrio y útil para un dashboard.
 
 Usa exclusivamente el contexto estadístico proporcionado.
 No inventes datos. Si una relación es débil, dilo explícitamente.
-Evita lenguaje alarmista, recomendaciones legales y repeticiones metodológicas.
+Evita lenguaje alarmista y evita recomendaciones legales.
 
 Entrega:
-1. Lectura rápida de los filtros.
+1. Lectura general de los filtros seleccionados.
 2. Hallazgos principales.
 3. Relación entre percepción, cifra negra e incidencia.
-4. Nota de datos solo si hay un problema real de disponibilidad o variación.
-
-Máximo 900 palabras. No cierres con listas largas de próximos cruces.
+4. Posibles interpretaciones con cautela metodológica.
+5. Preguntas o próximos cruces recomendados.
 
 Contexto:
 {contexto}
@@ -1434,24 +1313,15 @@ def responder_chat_ia(modelo, contexto, analisis, historial, pregunta):
     historial_txt = "\n".join(
         f"{mensaje['role']}: {mensaje['content']}"
         for mensaje in historial[-8:]
-        if mensaje.get("role") in {"user", "assistant"}
     )
 
     prompt = f"""
 Eres analista de datos públicos de seguridad en México.
-Responde en español, de forma clara, breve y directa, usando solo el contexto del dashboard,
+Responde en español, de forma clara y breve, usando solo el contexto del dashboard,
 el análisis ya generado y la conversación. El contexto incluye datos filtrados,
 cobertura por año y muestras de las tablas usadas por las gráficas; úsalo para
 responder preguntas específicas. Si el usuario pide algo que no se puede inferir
-de estos datos, dilo en una frase.
-
-Reglas de estilo:
-- Máximo 2 párrafos o 4 viñetas.
-- No repitas recomendaciones metodológicas salvo que el usuario las pida.
-- No cierres siempre con ideas de próximos cruces.
-- Si el usuario pide una gráfica o tabla, responde de forma concreta qué vas a visualizar o tabular.
-- Si el usuario pide media, promedio, máximo, mínimo, suma, conteo o mediana, calcula con los datos del contexto y menciona que se mostrará como tabla descargable.
-- No inventes datos ni cambies la variable solicitada.
+de estos datos, dilo y sugiere qué filtro o cruce revisaría.
 
 Contexto estadístico:
 {contexto}
@@ -1474,493 +1344,9 @@ def pregunta_pide_grafico(pregunta):
     claves = [
         "grafica", "gráfica", "grafico", "gráfico", "visualiza", "dibuja",
         "graficar", "grafíc", "plot", "hazlo", "muestralo", "muéstralo",
-        "tendencia", "visualización", "visualizacion", "pastel", "pie",
-        "donut", "dona", "barras", "barra", "correlacion", "correlación",
-        "matriz", "heatmap", "histograma", "dispersión", "dispersion",
-        "ranking", "comparacion", "comparación", "relacion", "relación",
-        "contra", " vs ", "asociacion", "asociación"
+        "tendencia", "visualización", "visualizacion"
     ]
     return any(clave in texto for clave in claves)
-
-
-def respuesta_indica_grafico(respuesta):
-    texto = (respuesta or "").lower()
-    claves = [
-        "voy a visualizar", "se visualizar", "se visualizará", "visualizaré",
-        "voy a graficar", "se graficar", "gráfico", "grafico", "gráfica",
-        "matriz de correlación", "dispersión", "scatter", "barras", "pastel",
-        "heatmap", "mapa de correlación"
-    ]
-    return any(clave in texto for clave in claves)
-
-
-def pregunta_continua_grafico(pregunta, historial):
-    texto = (pregunta or "").lower().strip()
-    if not texto:
-        return False
-
-    claves_cortas = [
-        "general", "esos estados", "disponibles", "esa", "ese",
-        "ahora", "lo mismo", "otra variable", "con otra variable"
-    ]
-    if not any(clave in texto for clave in claves_cortas):
-        return False
-
-    return any(
-        mensaje.get("role") == "chart" or pregunta_pide_grafico(mensaje.get("content", ""))
-        for mensaje in historial[-6:]
-    )
-
-
-def pregunta_pide_tabla(pregunta):
-    texto = (pregunta or "").lower()
-    claves = [
-        "tabla", "tabulado", "cuadro", "listado", "filtra", "filtrame",
-        "filtrame", "en tabla", "tabla de", "tabla con",
-        "muéstrame los datos", "muestrame los datos",
-        "descargar", "exportar", "csv"
-    ]
-    return any(clave in texto for clave in claves)
-
-
-def pregunta_pide_calculo(pregunta):
-    texto = (pregunta or "").lower()
-    claves = [
-        "media", "promedio", "mediana", "máximo", "maximo", "mínimo",
-        "minimo", "suma", "total", "desviación", "desviacion", "conteo",
-        "cuenta", "calcula", "calculo", "cálculo"
-    ]
-    return any(clave in texto for clave in claves)
-
-
-def metrica_pedida(texto, default="Cifra_Negra"):
-    if "percep" in texto or "inseguridad" in texto:
-        return "Percepcion"
-    if "general" in texto:
-        return "Incidencia_General"
-    if "especific" in texto or "delito" in texto or "amenaza" in texto:
-        return "Incidencia_Especifica"
-    if "cifra" in texto or "denuncia" in texto or "denunci" in texto:
-        return "Cifra_Negra"
-    return default
-
-
-def etiquetas_metricas_cruce():
-    return {
-        "Percepcion": "Percepción de inseguridad (%)",
-        "Cifra_Negra": "Cifra Negra (%)",
-        "Incidencia_Especifica": "Incidencia Específica",
-        "Incidencia_General": "Incidencia General",
-    }
-
-
-def grafico_correlacion_chat(df_master, titulo="Matriz De Correlación"):
-    if df_master is None or df_master.empty:
-        return None, "No hay datos cruzados suficientes para calcular correlaciones."
-
-    metricas = list(etiquetas_metricas_cruce().keys())
-    if not hay_variacion_suficiente(df_master, metricas[:2]):
-        return None, "No hay variación suficiente para una matriz de correlación."
-
-    matriz = df_master[metricas].corr().round(3)
-    etiquetas = etiquetas_metricas_cruce()
-    matriz.index = [etiquetas[col] for col in matriz.index]
-    matriz.columns = [etiquetas[col] for col in matriz.columns]
-
-    anotaciones = []
-    for fila, nombre_fila in enumerate(matriz.index):
-        for columna, nombre_columna in enumerate(matriz.columns):
-            valor = matriz.iloc[fila, columna]
-            texto_color = (
-                "#0a0a0a"
-                if (MODO_OSCURO and valor >= 0.78) or (not MODO_OSCURO and valor >= 0.72)
-                else COLOR_TEXTO
-            )
-            if not MODO_OSCURO and valor < 0.72:
-                texto_color = "#0a0a0a"
-            anotaciones.append(
-                dict(
-                    x=nombre_columna,
-                    y=nombre_fila,
-                    text=f"{valor:.2f}",
-                    showarrow=False,
-                    font=dict(color=texto_color, size=12),
-                )
-            )
-
-    fig = go.Figure(
-        data=go.Heatmap(
-            z=matriz.values,
-            x=matriz.columns,
-            y=matriz.index,
-            zmin=-1,
-            zmax=1,
-            colorscale=ESCALA_CORRELACION,
-            xgap=1,
-            ygap=1,
-            colorbar=dict(
-                tickfont=dict(color=COLOR_TEXTO),
-                title=dict(text="r", font=dict(color=COLOR_TEXTO)),
-            ),
-            hovertemplate="%{y}<br>%{x}<br>Correlación: %{z:.3f}<extra></extra>",
-        )
-    )
-    fig.update_layout(title=titulo, annotations=anotaciones)
-    aplicar_estilo_figura(fig, altura=480)
-    fig.update_layout(margin=dict(l=170, r=92, t=66, b=112))
-    fig.update_xaxes(automargin=True, tickangle=35, showgrid=False, zeroline=False)
-    fig.update_yaxes(automargin=True, autorange="reversed", showgrid=False, zeroline=False)
-    return fig, "Matriz de correlación generada con las variables cruzadas filtradas."
-
-
-def grafico_pastel_denuncias_chat(df_master, df_total, anios_seleccionados, delito_master, titulo=None):
-    promedio_cn = np.nan
-
-    if df_master is not None and not df_master.empty and "Cifra_Negra" in df_master.columns:
-        promedio_cn = df_master["Cifra_Negra"].mean()
-
-    if not np.isfinite(promedio_cn):
-        cols = [c for c in df_total.columns if c.startswith("CN_") and c.endswith("_Est")]
-        if cols:
-            df_cn = df_total.melt(
-                id_vars=["Entidad federativa"],
-                value_vars=cols,
-                var_name="Indicador",
-                value_name="Valor",
-            )
-            df_cn["Año"] = df_cn["Indicador"].str.extract(r"CN_(\d{4})").astype(int)
-            df_cn["Delito"] = df_cn["Indicador"].str.extract(r"CN_\d{4}_(.*)_Est")
-            df_cn = df_cn[df_cn["Año"].isin(anios_seleccionados)]
-            if delito_master in set(df_cn["Delito"].dropna()):
-                df_cn = df_cn[df_cn["Delito"] == delito_master]
-            promedio_cn = df_cn["Valor"].mean()
-
-    if not np.isfinite(promedio_cn):
-        return None, "No hay cifra negra suficiente para calcular la proporción de denuncias."
-
-    promedio_cn = float(np.clip(promedio_cn, 0, 100))
-    df_pie = pd.DataFrame({
-        "Estado Legal": ["No Denunciado (Cifra Negra)", "Denunciado Formalmente"],
-        "Porcentaje": [promedio_cn, 100 - promedio_cn],
-    })
-
-    fig = px.pie(
-        df_pie,
-        names="Estado Legal",
-        values="Porcentaje",
-        hole=0.42,
-        title=titulo or f"Proporción De Denuncias ({delito_master or 'Filtros Actuales'})",
-        color="Estado Legal",
-        color_discrete_map={
-            "No Denunciado (Cifra Negra)": COLOR_ACENTO,
-            "Denunciado Formalmente": COLOR_TERCIARIO,
-        },
-    )
-    fig.update_traces(textposition="inside", textinfo="label+percent")
-    aplicar_estilo_figura(fig)
-    fig.update_layout(margin=dict(l=24, r=24, t=64, b=76))
-    return fig, "Pastel generado con el promedio de cifra negra de los filtros actuales."
-
-
-def grafico_ranking_entidades_chat(df_master, texto, titulo=None):
-    if df_master is None or df_master.empty:
-        return None, "No hay datos cruzados suficientes para hacer un ranking por entidad."
-
-    metrica = metrica_pedida(texto)
-    etiquetas = etiquetas_metricas_cruce()
-    df_rank = (
-        df_master.groupby("Entidad federativa", as_index=False)[metrica]
-        .mean()
-        .sort_values(metrica, ascending=False)
-        .head(20)
-    )
-
-    if df_rank.empty or df_rank[metrica].nunique(dropna=True) < 2:
-        return None, "No hay variación suficiente para comparar entidades."
-
-    fig = px.bar(
-        df_rank,
-        x=metrica,
-        y="Entidad federativa",
-        orientation="h",
-        title=titulo or f"Ranking Por Entidad: {etiquetas[metrica]}",
-        labels={metrica: etiquetas[metrica]},
-        color="Entidad federativa",
-        color_discrete_sequence=paleta_entidades(df_rank),
-    )
-    aplicar_estilo_figura(fig, altura=max(460, 28 * len(df_rank) + 120))
-    fig.update_layout(showlegend=False, margin=dict(l=170, r=42, t=64, b=54))
-    fig.update_yaxes(autorange="reversed", automargin=True)
-    return fig, "Barras generadas con promedios por entidad para los filtros actuales."
-
-
-def grafico_histograma_chat(df_master, texto, titulo=None):
-    if df_master is None or df_master.empty:
-        return None, "No hay datos cruzados suficientes para un histograma."
-
-    metrica = metrica_pedida(texto)
-    etiquetas = etiquetas_metricas_cruce()
-    if df_master[metrica].nunique(dropna=True) < 2:
-        return None, "No hay variación suficiente para un histograma."
-
-    fig = px.histogram(
-        df_master,
-        x=metrica,
-        nbins=18,
-        title=titulo or f"Distribución: {etiquetas[metrica]}",
-        labels={metrica: etiquetas[metrica]},
-        color_discrete_sequence=[COLOR_ACENTO],
-    )
-    aplicar_estilo_figura(fig)
-    return fig, "Histograma generado con los registros cruzados filtrados."
-
-
-def grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados, titulo=None):
-    df_env = df_filtrado[
-        (df_filtrado["Seguridad"] == "Inseguro") &
-        (df_filtrado["Año"].isin(anios_seleccionados))
-    ].copy()
-
-    if df_env.empty or "ENV_Estimaciones puntuales" not in df_env.columns:
-        return None, "No hay datos ENVIPE suficientes para comparar por sexo."
-
-    df_sexo = (
-        df_env.groupby(["Año", "Sexo"], as_index=False)["ENV_Estimaciones puntuales"]
-        .mean()
-        .dropna()
-    )
-    if df_sexo.empty or df_sexo["Sexo"].nunique() < 2:
-        return None, "No hay suficientes categorías de sexo para comparar."
-
-    fig = px.line(
-        df_sexo,
-        x="Año",
-        y="ENV_Estimaciones puntuales",
-        color="Sexo",
-        markers=True,
-        title=titulo or "Comparación ENVIPE Por Sexo",
-        labels={"ENV_Estimaciones puntuales": "% de Inseguridad"},
-        color_discrete_map=PALETA_SEXO,
-    )
-    fig.update_layout(yaxis_ticksuffix="%")
-    aplicar_estilo_figura(fig)
-    return fig, "Comparación por sexo generada con ENVIPE filtrado."
-
-
-def grafico_relacion_cruce_chat(df_master, texto, titulo=None):
-    if df_master is None or df_master.empty:
-        return None, "No hay datos cruzados suficientes para visualizar esa relación."
-
-    etiquetas = etiquetas_metricas_cruce()
-    texto = texto.lower()
-
-    if "cifra" in texto and ("percep" in texto or "inseguridad" in texto):
-        x, y = "Percepcion", "Cifra_Negra"
-    elif "general" in texto and ("percep" in texto or "inseguridad" in texto):
-        x, y = "Percepcion", "Incidencia_General"
-    elif "general" in texto and ("cifra" in texto or "denunci" in texto):
-        x, y = "Incidencia_General", "Cifra_Negra"
-    elif "especific" in texto and ("percep" in texto or "inseguridad" in texto):
-        x, y = "Percepcion", "Incidencia_Especifica"
-    elif "especific" in texto and ("cifra" in texto or "denunci" in texto):
-        x, y = "Incidencia_Especifica", "Cifra_Negra"
-    else:
-        x, y = "Incidencia_Especifica", "Percepcion"
-
-    if df_master[x].nunique(dropna=True) < 2 or df_master[y].nunique(dropna=True) < 2:
-        return None, "No hay variación suficiente para graficar esa relación."
-
-    r = df_master[[x, y]].corr().iloc[0, 1]
-    fig = px.scatter(
-        df_master,
-        x=x,
-        y=y,
-        color="Entidad federativa",
-        size="Cifra_Negra" if "Cifra_Negra" not in {x, y} else "Incidencia_General",
-        hover_data=["Año", "Delito", "Incidencia_General"],
-        title=titulo or f"{etiquetas[y]} vs {etiquetas[x]} | r = {r:.3f}",
-        labels=etiquetas,
-        color_discrete_sequence=paleta_entidades(df_master),
-        opacity=0.78,
-    )
-    aplicar_estilo_figura(fig)
-    ajustar_legenda_larga(fig, df_master)
-    return fig, "Dispersión generada con el cruce 360 filtrado."
-
-
-def construir_tabla_chat(pregunta, df_master, df_filtrado, anios_seleccionados, delito_master):
-    texto = (pregunta or "").lower()
-
-    if df_master is not None and not df_master.empty:
-        df_base = df_master.copy()
-        origen = "cruce_360"
-    else:
-        df_base = df_filtrado[df_filtrado["Año"].isin(anios_seleccionados)].copy()
-        origen = "base_filtrada"
-
-    if df_base.empty:
-        return None, "No hay datos suficientes para construir una tabla con los filtros actuales."
-
-    anios_mencionados = [
-        int(valor) for valor in re.findall(r"\b(?:201[0-9]|202[0-9])\b", texto)
-    ]
-    if anios_mencionados and "Año" in df_base.columns:
-        df_base = df_base[df_base["Año"].isin(anios_mencionados)]
-        if df_base.empty:
-            return None, f"No hay datos para {', '.join(map(str, anios_mencionados))} con los filtros actuales."
-
-    metricas = [col for col in etiquetas_metricas_cruce() if col in df_base.columns]
-    dimensiones = [col for col in ["Entidad federativa", "Año", "Delito", "Sexo", "Seguridad"] if col in df_base.columns]
-
-    if ("entidad" in texto or "estado" in texto or "estados" in texto) and "año" in texto and {"Entidad federativa", "Año"}.issubset(df_base.columns):
-        grupo = ["Entidad federativa", "Año"]
-    elif "entidad" in texto or "estado" in texto or "estados" in texto:
-        grupo = ["Entidad federativa"]
-    elif "año" in texto or "anio" in texto or "años" in texto:
-        grupo = ["Año"]
-    elif "delito" in texto and "Delito" in df_base.columns:
-        grupo = ["Delito"]
-    else:
-        grupo = ["Entidad federativa", "Año"] if {"Entidad federativa", "Año"}.issubset(df_base.columns) else dimensiones[:2]
-
-    if not metricas:
-        columnas = dimensiones + [
-            col for col in df_base.select_dtypes(include="number").columns
-            if col not in {"Año"}
-        ][:6]
-        tabla = df_base[columnas].head(200).copy()
-    else:
-        tabla = (
-            df_base.groupby(grupo, as_index=False)[metricas]
-            .mean()
-            .round(3)
-            .sort_values(grupo)
-        )
-
-    if "top" in texto or "mayor" in texto or "alt" in texto:
-        metrica = metrica_pedida(texto, default=metricas[0] if metricas else None)
-        if metrica in tabla.columns:
-            tabla = tabla.sort_values(metrica, ascending=False)
-    elif "menor" in texto or "baj" in texto:
-        metrica = metrica_pedida(texto, default=metricas[0] if metricas else None)
-        if metrica in tabla.columns:
-            tabla = tabla.sort_values(metrica, ascending=True)
-
-    tabla = tabla.head(200)
-    nota = (
-        f"Tabla generada con {len(tabla):,} filas desde {origen}"
-        f"{f' para {delito_master}' if delito_master else ''}."
-    )
-    return tabla, nota
-
-
-def construir_calculo_chat(pregunta, df_master, df_filtrado, anios_seleccionados):
-    texto = (pregunta or "").lower()
-
-    if df_master is not None and not df_master.empty:
-        df_base = df_master.copy()
-    else:
-        df_base = df_filtrado[df_filtrado["Año"].isin(anios_seleccionados)].copy()
-
-    if df_base.empty:
-        return None, "No hay datos suficientes para calcular con los filtros actuales."
-
-    anios_mencionados = [
-        int(valor) for valor in re.findall(r"\b(?:201[0-9]|202[0-9])\b", texto)
-    ]
-    if anios_mencionados and "Año" in df_base.columns:
-        df_base = df_base[df_base["Año"].isin(anios_mencionados)]
-        if df_base.empty:
-            return None, f"No hay datos para {', '.join(map(str, anios_mencionados))} con los filtros actuales."
-
-    metrica = metrica_pedida(texto, default="Cifra_Negra")
-    if metrica not in df_base.columns:
-        numericas = [col for col in df_base.select_dtypes(include="number").columns if col != "Año"]
-        if not numericas:
-            return None, "No encontré variables numéricas para calcular."
-        metrica = numericas[0]
-
-    serie = df_base[metrica].dropna()
-    if serie.empty:
-        return None, f"No hay valores disponibles para {metrica}."
-
-    if "mediana" in texto:
-        operacion = "Mediana"
-        aggfunc = "median"
-    elif "máximo" in texto or "maximo" in texto or "mayor" in texto:
-        operacion = "Máximo"
-        aggfunc = "max"
-    elif "mínimo" in texto or "minimo" in texto or "menor" in texto:
-        operacion = "Mínimo"
-        aggfunc = "min"
-    elif "suma" in texto or "total" in texto:
-        operacion = "Suma"
-        aggfunc = "sum"
-    elif "desviación" in texto or "desviacion" in texto:
-        operacion = "Desviación estándar"
-        aggfunc = "std"
-    elif "conteo" in texto or "cuenta" in texto:
-        operacion = "Conteo"
-        aggfunc = "count"
-    else:
-        operacion = "Media"
-        aggfunc = "mean"
-
-    grupos = []
-    if ("por estado" in texto or "por entidad" in texto or "por estados" in texto) and "Entidad federativa" in df_base.columns:
-        grupos.append("Entidad federativa")
-    if ("por año" in texto or "por anio" in texto or "por años" in texto) and "Año" in df_base.columns:
-        grupos.append("Año")
-    if "por delito" in texto and "Delito" in df_base.columns:
-        grupos.append("Delito")
-    if "por sexo" in texto and "Sexo" in df_base.columns:
-        grupos.append("Sexo")
-
-    if grupos:
-        tabla = (
-            df_base.groupby(grupos, as_index=False)
-            .agg(Valor=(metrica, aggfunc), Observaciones_usadas=(metrica, "count"))
-            .sort_values(grupos)
-        )
-        tabla.insert(len(grupos), "Cálculo", operacion)
-        tabla.insert(len(grupos) + 1, "Variable", etiquetas_metricas_cruce().get(metrica, metrica))
-        tabla["Valor"] = tabla["Valor"].round(4)
-        nota = (
-            f"{operacion} de {etiquetas_metricas_cruce().get(metrica, metrica)} "
-            f"agrupada por {', '.join(grupos)}."
-        )
-        return tabla.head(200), nota
-
-    if "mediana" in texto:
-        operacion = "Mediana"
-        valor = serie.median()
-    elif "máximo" in texto or "maximo" in texto or "mayor" in texto:
-        operacion = "Máximo"
-        valor = serie.max()
-    elif "mínimo" in texto or "minimo" in texto or "menor" in texto:
-        operacion = "Mínimo"
-        valor = serie.min()
-    elif "suma" in texto or "total" in texto:
-        operacion = "Suma"
-        valor = serie.sum()
-    elif "desviación" in texto or "desviacion" in texto:
-        operacion = "Desviación estándar"
-        valor = serie.std()
-    elif "conteo" in texto or "cuenta" in texto:
-        operacion = "Conteo"
-        valor = serie.count()
-    else:
-        operacion = "Media"
-        valor = serie.mean()
-
-    tabla = pd.DataFrame([{
-        "Cálculo": operacion,
-        "Variable": etiquetas_metricas_cruce().get(metrica, metrica),
-        "Valor": round(float(valor), 4),
-        "Observaciones usadas": int(serie.count()),
-    }])
-    nota = f"{operacion} calculada sobre {etiquetas_metricas_cruce().get(metrica, metrica)} con los filtros actuales."
-    return tabla, nota
 
 
 def crear_grafico_desde_pregunta(
@@ -1976,38 +1362,6 @@ def crear_grafico_desde_pregunta(
         return None, None
 
     texto = pregunta.lower()
-
-    if "correl" in texto or "matriz" in texto or "heatmap" in texto:
-        return grafico_correlacion_chat(df_master)
-
-    if "relacion" in texto or "relación" in texto or " vs " in texto or "contra" in texto or "asociacion" in texto or "asociación" in texto:
-        return grafico_relacion_cruce_chat(df_master, texto)
-
-    if "pastel" in texto or "pie" in texto or "donut" in texto or "dona" in texto or "proporcion" in texto or "proporción" in texto:
-        return grafico_pastel_denuncias_chat(
-            df_master,
-            df_total,
-            anios_seleccionados,
-            delito_master,
-        )
-
-    if "sexo" in texto and ("envipe" in texto or "percep" in texto or "inseguridad" in texto):
-        return grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados)
-
-    if "histograma" in texto or "distribución" in texto or "distribucion" in texto:
-        if "denuncia" in texto or "denunci" in texto or "pastel" in texto:
-            return grafico_pastel_denuncias_chat(
-                df_master,
-                df_total,
-                anios_seleccionados,
-                delito_master,
-            )
-        return grafico_histograma_chat(df_master, texto)
-
-    if "barra" in texto or "barras" in texto or "ranking" in texto or "top" in texto:
-        if "sexo" in texto:
-            return grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados)
-        return grafico_ranking_entidades_chat(df_master, texto)
 
     if "envipe" in texto or "percepcion" in texto or "percepción" in texto or "inseguridad" in texto:
         df_env = df_filtrado[
@@ -2169,8 +1523,8 @@ El usuario quiere una gráfica nueva. No escribas código Python ni JavaScript.
 Devuelve SOLO un JSON válido con esta forma:
 
 {{
-  "dataset": "envipe|envipe_cobertura|sexo_envipe|cifra_negra|incidencia_general|incidencia_especifica|cruce360|correlacion|denuncias_pastel|ranking_entidades",
-  "tipo": "linea|barras|dispersion|pastel|donut|correlacion|histograma",
+  "dataset": "envipe|envipe_cobertura|cifra_negra|incidencia_general|cruce360",
+  "tipo": "linea|barras|dispersion",
   "x": "Año|Entidad federativa|Incidencia_Especifica|Incidencia_General|Percepcion|Cifra_Negra",
   "y": "ENV_Estimaciones puntuales|Valor|Tasa_Incidencia|Percepcion|Cifra_Negra|Incidencia_Especifica|Incidencia_General|Con_Dato",
   "color": "Entidad federativa|Sexo|Año|ninguno",
@@ -2181,14 +1535,9 @@ Devuelve SOLO un JSON válido con esta forma:
 Reglas:
 - Usa "envipe_cobertura" si preguntan por años faltantes, disponibilidad, cobertura o si hay datos en 2012.
 - Usa "envipe" para percepción/inseguridad por año o entidad.
-- Usa "sexo_envipe" si piden comparar hombres, mujeres o sexo.
 - Usa "cifra_negra" para denuncias, no denuncia, cifra negra.
 - Usa "incidencia_general" para tasa general estatal.
-- Usa "incidencia_especifica" para incidencia por delito seleccionado.
 - Usa "cruce360" para relaciones/correlaciones entre percepción, cifra negra e incidencia.
-- Usa "correlacion" si piden matriz, correlación o heatmap.
-- Usa "denuncias_pastel" si piden pastel, dona, pie o proporción de denunciado/no denunciado.
-- Usa "ranking_entidades" si piden barras, ranking, top o comparación por entidad.
 - Si no hay suficiente claridad, elige la vista más simple que conteste la pregunta.
 
 Contexto disponible:
@@ -2218,39 +1567,6 @@ def crear_grafico_desde_spec_ia(
     titulo = spec.get("titulo") or "Gráfico Generado Por IA"
     color = spec.get("color") if spec.get("color") != "ninguno" else None
     tamano = spec.get("tamano") if spec.get("tamano") != "ninguno" else None
-
-    if dataset == "correlacion" or tipo == "correlacion":
-        return grafico_correlacion_chat(df_master, titulo)
-
-    if dataset == "denuncias_pastel" or tipo in {"pastel", "donut"}:
-        return grafico_pastel_denuncias_chat(
-            df_master,
-            df_total,
-            anios_seleccionados,
-            delito_master,
-            titulo=titulo,
-        )
-
-    if dataset == "sexo_envipe":
-        return grafico_sexo_envipe_chat(
-            df_filtrado,
-            anios_seleccionados,
-            titulo=titulo,
-        )
-
-    if dataset == "ranking_entidades":
-        return grafico_ranking_entidades_chat(
-            df_master,
-            f"{spec.get('y', '')} {spec.get('x', '')} {titulo}",
-            titulo=titulo,
-        )
-
-    if tipo == "histograma":
-        return grafico_histograma_chat(
-            df_master,
-            f"{spec.get('y', '')} {spec.get('x', '')} {titulo}",
-            titulo=titulo,
-        )
 
     if dataset in {"envipe", "envipe_cobertura"}:
         df_plot = df_filtrado[
@@ -2363,35 +1679,6 @@ def crear_grafico_desde_spec_ia(
         ajustar_legenda_larga(fig, df_plot)
         return fig, "Gráfico generado por IA con especificación validada: incidencia general."
 
-    if dataset == "incidencia_especifica":
-        if df_master is None or df_master.empty:
-            return None, "La IA pidió incidencia específica, pero no hay cruce suficiente con los filtros actuales."
-
-        if tipo == "barras":
-            return grafico_ranking_entidades_chat(df_master, "incidencia especifica", titulo=titulo)
-
-        df_plot = (
-            df_master.groupby(["Año", "Entidad federativa"], as_index=False)["Incidencia_Especifica"]
-            .mean()
-            .dropna()
-        )
-        if df_plot.empty or df_plot["Año"].nunique() < 2:
-            return None, "La IA pidió incidencia específica, pero no hay suficientes años para graficar."
-
-        fig = px.line(
-            df_plot,
-            x="Año",
-            y="Incidencia_Especifica",
-            color="Entidad federativa",
-            markers=True,
-            title=titulo,
-            labels={"Incidencia_Especifica": "Incidencia Específica"},
-            color_discrete_sequence=paleta_entidades(df_plot),
-        )
-        aplicar_estilo_figura(fig)
-        ajustar_legenda_larga(fig, df_plot)
-        return fig, "Gráfico generado por IA con especificación validada: incidencia específica."
-
     if dataset == "cruce360":
         if df_master is None or df_master.empty:
             return None, "La IA pidió el cruce 360, pero no hay intersección suficiente con los filtros actuales."
@@ -2444,92 +1731,6 @@ def mostrar_mensaje_chat(mensaje):
         st.markdown('<div class="chat-content">', unsafe_allow_html=True)
         st.markdown(mensaje["content"])
         st.markdown("</div>", unsafe_allow_html=True)
-
-
-def mostrar_grafico_chat(mensaje, df_filtrado, df_total, df_master, anios_seleccionados, sexo_percepcion, delito_master):
-    fig = None
-    nota = mensaje.get("nota") or "Gráfico generado desde el chat."
-
-    if mensaje.get("modo") == "spec":
-        fig, nota_auto = crear_grafico_desde_spec_ia(
-            spec=mensaje.get("spec"),
-            df_filtrado=df_filtrado,
-            df_total=df_total,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
-            sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
-        )
-    else:
-        fig, nota_auto = crear_grafico_desde_pregunta(
-            pregunta=mensaje.get("pregunta", ""),
-            df_filtrado=df_filtrado,
-            df_total=df_total,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
-            sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
-        )
-
-    nota = nota or nota_auto or "Gráfico generado desde el chat."
-    if fig is None:
-        st.info(nota_auto or "No pude reconstruir esta gráfica con los filtros actuales.")
-        return
-
-    st.markdown(
-        f'<div class="generated-chart-note">{html.escape(nota)}</div>',
-        unsafe_allow_html=True
-    )
-    st.plotly_chart(fig, width="stretch", theme=None)
-
-
-def mostrar_tabla_chat(mensaje, df_master, df_filtrado, anios_seleccionados, delito_master):
-    tipo = mensaje.get("tipo", "tabla")
-    pregunta = mensaje.get("pregunta", "")
-
-    if tipo == "calculo":
-        tabla, nota = construir_calculo_chat(
-            pregunta,
-            df_master=df_master,
-            df_filtrado=df_filtrado,
-            anios_seleccionados=anios_seleccionados,
-        )
-    else:
-        tabla, nota = construir_tabla_chat(
-            pregunta,
-            df_master=df_master,
-            df_filtrado=df_filtrado,
-            anios_seleccionados=anios_seleccionados,
-            delito_master=delito_master,
-        )
-
-    nota = mensaje.get("nota") or nota
-    if tabla is None or tabla.empty:
-        st.info(nota or "No pude construir la tabla con los filtros actuales.")
-        return
-
-    st.markdown(
-        f'<div class="generated-chart-note">{html.escape(nota)}</div>',
-        unsafe_allow_html=True
-    )
-    tabla_html = tabla.to_html(
-        index=False,
-        border=0,
-        classes="ai-table",
-        escape=True,
-        na_rep="",
-    )
-    st.markdown(
-        f'<div class="ai-table-wrap">{tabla_html}</div>',
-        unsafe_allow_html=True,
-    )
-    st.download_button(
-        "Descargar tabla CSV",
-        data=tabla.to_csv(index=False).encode("utf-8"),
-        file_name=f"consulta_ia_{tipo}.csv",
-        mime="text/csv",
-        key=f"download_{tipo}_{abs(hash(json.dumps(mensaje, sort_keys=True, default=str))) % 100000000}",
-    )
 
 
 @st.cache_data
@@ -2611,16 +1812,10 @@ if estados_seleccionados:
 
 df_total = df_filtrado[df_filtrado["Sexo"] == "Total"].copy()
 
-for clave_persistente in ["analisis_ia", "analisis_ia_contexto", "chat_ia", "graficos_ia_specs", "artefactos_ia_specs"]:
-    if clave_persistente not in st.session_state and clave_persistente in ESTADO_PERSISTENTE:
-        st.session_state[clave_persistente] = ESTADO_PERSISTENTE[clave_persistente]
-
 if "graficos_ia" not in st.session_state:
     st.session_state["graficos_ia"] = []
 if "graficos_ia_specs" not in st.session_state:
     st.session_state["graficos_ia_specs"] = []
-if "artefactos_ia_specs" not in st.session_state:
-    st.session_state["artefactos_ia_specs"] = []
 
 st.sidebar.markdown(
     """
@@ -2682,6 +1877,35 @@ components.html(
         const doc = window.parent.document;
         const win = window.parent;
         const appliedThemes = new WeakMap();
+        const stateKey = "seguridadMxDashboardClientState";
+
+        const isDesktopDevice = () => {
+            const ua = win.navigator.userAgent || "";
+            const mobileLike = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua);
+            const coarsePointer = win.matchMedia("(pointer: coarse)").matches;
+            const noHover = win.matchMedia("(hover: none)").matches;
+            return !(mobileLike || (coarsePointer && noHover));
+        };
+
+        const syncDesktopGate = () => {
+            doc.body.classList.toggle("non-desktop-device", !isDesktopDevice());
+        };
+
+        const restoreClientState = () => {
+            try {
+                const url = new URL(win.location.href);
+                if (url.searchParams.has("reset_dashboard") || url.searchParams.has("client_state")) return;
+                const stored = JSON.parse(win.localStorage.getItem(stateKey) || "null");
+                if (!stored || !stored.encoded) return;
+                url.searchParams.set("client_state", stored.encoded);
+                win.location.replace(url.toString());
+            } catch (error) {
+                return;
+            }
+        };
+
+        restoreClientState();
+        syncDesktopGate();
 
         const parseRgb = (value) => {
             const match = String(value || "").match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/i);
@@ -2773,75 +1997,9 @@ components.html(
 
         let timer;
         let refreshTimer;
-        let sidebarOpenTimer;
-        const markAiPositionNow = () => {
-            win.sessionStorage.setItem("dashboardAiSendY", String(win.scrollY));
-            win.sessionStorage.setItem("dashboardAiSendAt", String(Date.now()));
-            win.sessionStorage.setItem("dashboardAiMoved", "0");
-        };
-
-        const markAiMoved = () => {
-            const sentAt = Number(win.sessionStorage.getItem("dashboardAiSendAt") || 0);
-            if (!sentAt || Date.now() - sentAt > 60000) return;
-            win.sessionStorage.setItem("dashboardAiMoved", "1");
-        };
-
-        const getSidebarWidth = () => {
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
-            if (!sidebar) return 0;
-            const rect = sidebar.getBoundingClientRect();
-            const styles = win.getComputedStyle(sidebar);
-            if (styles.display === "none" || styles.visibility === "hidden") return 0;
-            return rect.width;
-        };
-
-        const findSidebarOpenButton = () => {
-            const selectors = [
-                '[data-testid="stSidebarCollapsedControl"] button',
-                'button[data-testid="stSidebarCollapsedControl"]',
-                '[data-testid="collapsedControl"] button',
-                'button[data-testid="collapsedControl"]',
-                'button[kind="headerNoPadding"]',
-                'button[data-testid="stBaseButton-headerNoPadding"]',
-                'button[data-testid="baseButton-headerNoPadding"]'
-            ];
-            for (const selector of selectors) {
-                const button = doc.querySelector(selector);
-                if (button) return button;
-            }
-            return null;
-        };
-
-        const openSidebarFromEdge = () => {
-            if (getSidebarWidth() > 80) return;
-            win.clearTimeout(sidebarOpenTimer);
-            sidebarOpenTimer = win.setTimeout(() => {
-                if (getSidebarWidth() > 80) return;
-                const button = findSidebarOpenButton();
-                if (button) button.click();
-            }, 90);
-        };
-
-        const ensureSidebarHotzone = () => {
-            let hotzone = doc.querySelector(".sidebar-hotzone");
-            if (!hotzone) {
-                hotzone = doc.createElement("div");
-                hotzone.className = "sidebar-hotzone";
-                hotzone.setAttribute("aria-hidden", "true");
-                Object.assign(hotzone.style, {
-                    position: "fixed",
-                    top: "0",
-                    left: "0",
-                    width: "24px",
-                    height: "100vh",
-                    zIndex: "999997",
-                    background: "transparent",
-                    pointerEvents: "auto"
-                });
-                doc.body.appendChild(hotzone);
-                hotzone.addEventListener("mouseenter", openSidebarFromEdge);
-                hotzone.addEventListener("mousemove", openSidebarFromEdge);
-            }
+        const scheduleSync = () => {
+            win.clearTimeout(timer);
+            timer = win.setTimeout(syncPlotTheme, 120);
         };
 
         const ensureRefreshOverlay = () => {
@@ -2852,11 +2010,6 @@ components.html(
                 overlay.setAttribute("aria-hidden", "true");
                 doc.body.appendChild(overlay);
             }
-        };
-
-        const scheduleSync = () => {
-            win.clearTimeout(timer);
-            timer = win.setTimeout(syncPlotTheme, 120);
         };
 
         const animateRefresh = () => {
@@ -2873,16 +2026,8 @@ components.html(
             if (!button) return;
             const text = (button.innerText || "").trim().toLowerCase();
             if (text !== "enviar") return;
-            markAiPositionNow();
-        };
-
-        const markReportGeneratePosition = (event) => {
-            const button = event.target.closest("button");
-            if (!button) return;
-            const text = (button.innerText || "").trim().toLowerCase();
-            if (text !== "generar análisis con ia") return;
-            win.sessionStorage.setItem("dashboardReportSendY", String(win.scrollY));
-            win.sessionStorage.setItem("dashboardReportSendAt", String(Date.now()));
+            win.sessionStorage.setItem("dashboardAiSendY", String(win.scrollY));
+            win.sessionStorage.setItem("dashboardAiSendAt", String(Date.now()));
         };
 
         const maybeScrollToAiResponse = () => {
@@ -2890,31 +2035,14 @@ components.html(
             if (!marker || marker.dataset.done === "1") return;
 
             const sentAt = Number(win.sessionStorage.getItem("dashboardAiSendAt") || 0);
-            const recent = Date.now() - sentAt < 60000;
-            const userStayed = win.sessionStorage.getItem("dashboardAiMoved") !== "1";
-
-            if (recent && userStayed) {
-                marker.dataset.done = "1";
-                win.setTimeout(() => {
-                    marker.scrollIntoView({ behavior: "smooth", block: "end" });
-                    win.sessionStorage.setItem("dashboardAiMoved", "0");
-                }, 160);
-            }
-        };
-
-        const maybeScrollToReport = () => {
-            const marker = doc.querySelector('[data-report-autoscroll="1"]');
-            if (!marker || marker.dataset.done === "1") return;
-
-            const sentAt = Number(win.sessionStorage.getItem("dashboardReportSendAt") || 0);
-            const sentY = Number(win.sessionStorage.getItem("dashboardReportSendY") || 0);
+            const sentY = Number(win.sessionStorage.getItem("dashboardAiSendY") || 0);
             const recent = Date.now() - sentAt < 60000;
             const userStayed = Math.abs(win.scrollY - sentY) < 90;
 
             if (recent && userStayed) {
                 marker.dataset.done = "1";
                 win.setTimeout(() => {
-                    marker.scrollIntoView({ behavior: "smooth", block: "start" });
+                    marker.scrollIntoView({ behavior: "smooth", block: "end" });
                 }, 160);
             }
         };
@@ -2925,30 +2053,14 @@ components.html(
             }
         }, true);
 
-        doc.addEventListener("keydown", (event) => {
-            if (event.key !== "Enter" || event.shiftKey) return;
-            if (!event.target.closest('.chat-form input, .chat-form textarea')) return;
-            markAiPositionNow();
-        }, true);
-
         doc.addEventListener("click", (event) => {
             markAiSendPosition(event);
-            markReportGeneratePosition(event);
+            if (event.target.closest(".reset-link")) {
+                win.localStorage.removeItem(stateKey);
+            }
             if (event.target.closest('button, [role="option"], [data-baseweb="tag"]')) {
                 animateRefresh();
             }
-        }, true);
-
-        win.addEventListener("wheel", markAiMoved, { passive: true });
-        win.addEventListener("touchmove", markAiMoved, { passive: true });
-        win.addEventListener("keydown", (event) => {
-            if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(event.key)) {
-                markAiMoved();
-            }
-        }, true);
-
-        doc.addEventListener("mousemove", (event) => {
-            if (event.clientX <= 16) openSidebarFromEdge();
         }, true);
 
         doc.addEventListener("click", (event) => {
@@ -2963,11 +2075,11 @@ components.html(
         }, true);
 
         new MutationObserver(() => {
-            scheduleSync();
-            ensureSidebarHotzone();
+            doc.querySelectorAll('[title="streamlitApp"]').forEach((node) => node.removeAttribute("title"));
+            syncDesktopGate();
             ensureRefreshOverlay();
+            scheduleSync();
             maybeScrollToAiResponse();
-            maybeScrollToReport();
         }).observe(doc.body, {
             attributes: true,
             childList: true,
@@ -2975,11 +2087,11 @@ components.html(
         });
 
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
-        ensureSidebarHotzone();
+        win.matchMedia("(pointer: coarse)").addEventListener("change", syncDesktopGate);
+        win.matchMedia("(hover: none)").addEventListener("change", syncDesktopGate);
         ensureRefreshOverlay();
         scheduleSync();
         maybeScrollToAiResponse();
-        maybeScrollToReport();
     })();
     </script>
     """,
@@ -3117,6 +2229,7 @@ if cols_cn:
     delitos_cn = sorted(df_cn["Delito"].dropna().unique())
 
     if delitos_cn:
+        restaurar_widget_desde_cliente("tab2_delito", delitos_cn)
         delito_sel_cn = st.selectbox(
             "Clasificación del delito (Cifra Negra):",
             delitos_cn,
@@ -3231,6 +2344,7 @@ else:
         delitos_itd = sorted(df_itd["Delito"].dropna().unique())
 
         if delitos_itd:
+            restaurar_widget_desde_cliente("tab3_delito", delitos_itd)
             delito_sel_itd = st.selectbox(
                 "Selecciona el Tipo de Delito (Incidencia):",
                 delitos_itd,
@@ -3420,41 +2534,97 @@ if cols_ie and cols_cn and cols_itd:
         df_master = df_master.dropna()
 
         if not df_master.empty:
+            metricas_cruce = {
+                "Percepcion": "Percepción De Inseguridad (%)",
+                "Cifra_Negra": "Cifra Negra (%)",
+                "Incidencia_Especifica": "Incidencia Específica",
+                "Incidencia_General": "Incidencia General",
+            }
             st.divider()
 
             # --- GRÁFICA 1: BURBUJAS ---
             st.markdown("### 1. El Panorama Completo (Burbujas)")
+            col_b1, col_b2, col_b3, col_b4 = st.columns(4)
+            opciones_burbuja = list(metricas_cruce.keys())
+            opciones_color_burbuja = ["Entidad federativa", "Año", "Delito"]
+
+            for clave, opciones in {
+                "tab4_grafica1_x": opciones_burbuja,
+                "tab4_grafica1_y": opciones_burbuja,
+                "tab4_grafica1_tamano": opciones_burbuja,
+                "tab4_grafica1_color": opciones_color_burbuja,
+            }.items():
+                restaurar_widget_desde_cliente(clave, opciones)
+
+            with col_b1:
+                burbuja_x = st.selectbox(
+                    "Eje X:",
+                    opciones_burbuja,
+                    index=2,
+                    format_func=lambda valor: metricas_cruce[valor],
+                    key="tab4_grafica1_x",
+                )
+            with col_b2:
+                burbuja_y = st.selectbox(
+                    "Eje Y:",
+                    opciones_burbuja,
+                    index=1,
+                    format_func=lambda valor: metricas_cruce[valor],
+                    key="tab4_grafica1_y",
+                )
+            with col_b3:
+                burbuja_tamano = st.selectbox(
+                    "Tamaño:",
+                    opciones_burbuja,
+                    index=0,
+                    format_func=lambda valor: metricas_cruce[valor],
+                    key="tab4_grafica1_tamano",
+                )
+            with col_b4:
+                burbuja_color = st.selectbox(
+                    "Color:",
+                    opciones_color_burbuja,
+                    key="tab4_grafica1_color",
+                )
+
             st.caption(
-                "Eje X: Incidencia Específica | "
-                "Eje Y: Cifra Negra | "
-                "Tamaño: Percepción de Inseguridad | "
-                "Color: Entidad"
+                f"Eje X: {metricas_cruce[burbuja_x]} | "
+                f"Eje Y: {metricas_cruce[burbuja_y]} | "
+                f"Tamaño: {metricas_cruce[burbuja_tamano]} | "
+                f"Color: {burbuja_color}"
             )
 
             fig_bubble = px.scatter(
                 df_master,
-                x="Incidencia_Especifica",
-                y="Cifra_Negra",
-                size="Percepcion",
-                color="Entidad federativa",
+                x=burbuja_x,
+                y=burbuja_y,
+                size=burbuja_tamano,
+                color=burbuja_color,
                 hover_name="Entidad federativa",
                 hover_data=["Año", "Incidencia_General"],
-                title=f"Relación Multivariable - {delito_master}",
-                labels={
-                    "Incidencia_Especifica": "Incidencia Específica",
-                    "Cifra_Negra": "Cifra Negra (%)",
-                    "Percepcion": "Percepción De Inseguridad (%)",
-                },
-                color_discrete_sequence=paleta_entidades(df_master),
+                title=(
+                    f"{metricas_cruce[burbuja_y]} vs {metricas_cruce[burbuja_x]} "
+                    f"- {delito_master}"
+                ),
+                labels=metricas_cruce,
+                color_discrete_sequence=(
+                    paleta_entidades(df_master)
+                    if burbuja_color == "Entidad federativa"
+                    else PALETA_NEUTRA
+                ),
                 opacity=0.78,
                 size_max=30 if df_master["Entidad federativa"].nunique() > 3 else 40,
             )
 
-            fig_bubble.update_layout(yaxis_ticksuffix="%")
+            if burbuja_y in {"Percepcion", "Cifra_Negra"}:
+                fig_bubble.update_layout(yaxis_ticksuffix="%")
+            if burbuja_x in {"Percepcion", "Cifra_Negra"}:
+                fig_bubble.update_layout(xaxis_ticksuffix="%")
             aplicar_estilo_figura(fig_bubble)
             fig_bubble.update_traces(marker=dict(line=dict(width=0.8, color=COLOR_PANEL)))
             fig_bubble.update_layout(margin=dict(l=68, r=34, t=62, b=72))
-            ajustar_legenda_larga(fig_bubble, df_master)
+            if burbuja_color == "Entidad federativa":
+                ajustar_legenda_larga(fig_bubble, df_master)
             st.plotly_chart(fig_bubble, width="stretch", theme=None)
 
             st.divider()
@@ -3465,29 +2635,54 @@ if cols_ie and cols_cn and cols_itd:
             with col1:
                 # --- GRÁFICA 2: BARRAS AGRUPADAS ---
                 st.markdown("### 2. Percepción vs Cifra Negra")
+                for clave in ["tab4_grafica2_metrica_a", "tab4_grafica2_metrica_b"]:
+                    restaurar_widget_desde_cliente(clave, list(metricas_cruce.keys()))
+
+                col_g2a, col_g2b = st.columns(2)
+                with col_g2a:
+                    metrica_barra_a = st.selectbox(
+                        "Métrica A:",
+                        list(metricas_cruce.keys()),
+                        index=0,
+                        format_func=lambda valor: metricas_cruce[valor],
+                        key="tab4_grafica2_metrica_a",
+                    )
+                with col_g2b:
+                    metrica_barra_b = st.selectbox(
+                        "Métrica B:",
+                        list(metricas_cruce.keys()),
+                        index=1,
+                        format_func=lambda valor: metricas_cruce[valor],
+                        key="tab4_grafica2_metrica_b",
+                    )
 
                 df_barras = df_master.groupby("Entidad federativa")[
-                    ["Percepcion", "Cifra_Negra"]
+                    [metrica_barra_a, metrica_barra_b]
                 ].mean().reset_index()
 
                 df_barras_melt = df_barras.melt(
                     id_vars="Entidad federativa",
-                    value_vars=["Percepcion", "Cifra_Negra"],
+                    value_vars=[metrica_barra_a, metrica_barra_b],
                     var_name="Métrica",
-                    value_name="Porcentaje"
+                    value_name="Valor"
                 )
+                df_barras_melt["Métrica"] = df_barras_melt["Métrica"].map(metricas_cruce)
 
                 fig_bar = px.bar(
                     df_barras_melt,
                     x="Entidad federativa",
-                    y="Porcentaje",
+                    y="Valor",
                     color="Métrica",
                     barmode="group",
-                    title=f"Promedio en años seleccionados ({delito_master})",
+                    title=(
+                        f"{metricas_cruce[metrica_barra_a]} vs "
+                        f"{metricas_cruce[metrica_barra_b]} ({delito_master})"
+                    ),
                     color_discrete_sequence=[COLOR_ACENTO, COLOR_SECUNDARIO]
                 )
 
-                fig_bar.update_layout(yaxis_ticksuffix="%")
+                if {metrica_barra_a, metrica_barra_b}.issubset({"Percepcion", "Cifra_Negra"}):
+                    fig_bar.update_layout(yaxis_ticksuffix="%")
                 aplicar_estilo_figura(fig_bar)
                 fig_bar.update_layout(
                     margin=dict(l=58, r=26, t=62, b=90),
@@ -3557,12 +2752,32 @@ if cols_ie and cols_cn and cols_itd:
 
             # --- GRÁFICA 4: LÍNEAS DE TENDENCIA COMPARATIVA ---
             st.markdown("### 4. Líneas De Tendencia: Cifra Negra vs Incidencia Específica")
+            for clave in ["tab4_linea_a", "tab4_linea_b"]:
+                restaurar_widget_desde_cliente(clave, list(metricas_cruce.keys()))
+
+            col_l1, col_l2 = st.columns(2)
+            with col_l1:
+                linea_a = st.selectbox(
+                    "Línea izquierda:",
+                    list(metricas_cruce.keys()),
+                    index=1,
+                    format_func=lambda valor: metricas_cruce[valor],
+                    key="tab4_linea_a",
+                )
+            with col_l2:
+                linea_b = st.selectbox(
+                    "Línea derecha:",
+                    list(metricas_cruce.keys()),
+                    index=2,
+                    format_func=lambda valor: metricas_cruce[valor],
+                    key="tab4_linea_b",
+                )
 
             df_lineas = df_master.groupby("Año")[
-                ["Cifra_Negra", "Incidencia_Especifica"]
+                [linea_a, linea_b]
             ].mean().reset_index()
 
-            if df_lineas["Año"].nunique() < 2 or not hay_variacion_suficiente(df_lineas, ["Cifra_Negra"]):
+            if df_lineas["Año"].nunique() < 2 or not hay_variacion_suficiente(df_lineas, [linea_a]):
                 mostrar_no_disponible("No hay suficientes años o variación para dibujar las líneas de tendencia.")
                 st.divider()
             else:
@@ -3570,8 +2785,8 @@ if cols_ie and cols_cn and cols_itd:
 
                 fig_lines.add_trace(go.Scatter(
                     x=df_lineas["Año"],
-                    y=df_lineas["Cifra_Negra"],
-                    name="Cifra Negra (%)",
+                    y=df_lineas[linea_a],
+                    name=metricas_cruce[linea_a],
                     mode="lines+markers",
                     yaxis="y1",
                     line=dict(color=COLOR_ACENTO, width=3)
@@ -3579,28 +2794,32 @@ if cols_ie and cols_cn and cols_itd:
 
                 fig_lines.add_trace(go.Scatter(
                     x=df_lineas["Año"],
-                    y=df_lineas["Incidencia_Especifica"],
-                    name="Incidencia Específica (Tasa)",
+                    y=df_lineas[linea_b],
+                    name=metricas_cruce[linea_b],
                     mode="lines+markers",
                     yaxis="y2",
                     line=dict(color=COLOR_SECUNDARIO, width=3)
                 ))
 
                 fig_lines.update_layout(
-                    title=f"Evolución Promedio: {delito_master} (Estados Seleccionados)",
+                    title=(
+                        f"{metricas_cruce[linea_a]} vs {metricas_cruce[linea_b]} "
+                        f"({delito_master})"
+                    ),
                     yaxis=dict(
                         title=dict(
-                            text="Cifra Negra (%)",
+                            text=metricas_cruce[linea_a],
                             font=dict(color=COLOR_ACENTO)
                         ),
-                        ticksuffix="%",
+                        ticksuffix="%" if linea_a in {"Percepcion", "Cifra_Negra"} else "",
                         tickfont=dict(color=COLOR_ACENTO)
                     ),
                     yaxis2=dict(
                         title=dict(
-                            text="Tasa",
+                            text=metricas_cruce[linea_b],
                             font=dict(color=COLOR_SECUNDARIO)
                         ),
+                        ticksuffix="%" if linea_b in {"Percepcion", "Cifra_Negra"} else "",
                         tickfont=dict(color=COLOR_SECUNDARIO),
                         overlaying="y",
                         side="right"
@@ -3636,6 +2855,9 @@ if cols_ie and cols_cn and cols_itd:
             }
 
             col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
+            restaurar_widget_desde_cliente("tab4_metodo_corr", ["pearson", "spearman"])
+            restaurar_widget_desde_cliente("tab4_nivel_corr", ["Entidad-año", "Promedio por entidad"])
+            restaurar_widget_desde_cliente("tab4_variables_corr", list(metricas_correlacion.keys()))
 
             with col_ctrl1:
                 metodo_corr = st.selectbox(
@@ -3747,6 +2969,10 @@ if cols_ie and cols_cn and cols_itd:
 
             col_scatter1, col_scatter2, col_scatter3, col_scatter4 = st.columns(4)
             variables_disponibles = list(metricas_correlacion.keys())
+            restaurar_widget_desde_cliente("tab4_eje_x", variables_disponibles)
+            restaurar_widget_desde_cliente("tab4_eje_y", variables_disponibles)
+            restaurar_widget_desde_cliente("tab4_tamano", ["Ninguno"] + variables_disponibles)
+            restaurar_widget_desde_cliente("tab4_color", opciones_color)
 
             with col_scatter1:
                 eje_x = st.selectbox(
@@ -3916,156 +3142,48 @@ if st.button("Generar análisis con IA", type="primary"):
                 st.session_state["chat_ia"] = []
                 st.session_state["graficos_ia"] = []
                 st.session_state["graficos_ia_specs"] = []
-                st.session_state["artefactos_ia_specs"] = []
-                st.session_state["report_autoscroll_ready"] = True
             except Exception as error:
                 st.session_state.pop("analisis_ia", None)
                 st.session_state.pop("analisis_ia_contexto", None)
                 st.error(f"No se pudo generar el análisis: {error}")
 
-contexto_chat_actual = "\n".join([
-    construir_contexto_ia(
-        df_filtrado=df_filtrado,
-        df_master=df_master,
-        anios_seleccionados=anios_seleccionados,
-        estados_seleccionados=estados_seleccionados,
-        sexo_seleccionado=sexo_percepcion,
-        delito_master=delito_master,
-    ),
-    construir_contexto_datos_dashboard(
-        df_filtrado=df_filtrado,
-        df_total=df_total,
-        df_master=df_master,
-        anios_seleccionados=anios_seleccionados,
-        sexo_percepcion=sexo_percepcion,
-        delito_master=delito_master,
-    )
-])
-st.session_state["analisis_ia_contexto_actual"] = contexto_chat_actual
-
 if st.session_state.get("analisis_ia"):
-    if st.session_state.pop("report_autoscroll_ready", False):
-        st.markdown('<div data-report-autoscroll="1"></div>', unsafe_allow_html=True)
+    contexto_chat_actual = "\n".join([
+        construir_contexto_ia(
+            df_filtrado=df_filtrado,
+            df_master=df_master,
+            anios_seleccionados=anios_seleccionados,
+            estados_seleccionados=estados_seleccionados,
+            sexo_seleccionado=sexo_percepcion,
+            delito_master=delito_master,
+        ),
+        construir_contexto_datos_dashboard(
+            df_filtrado=df_filtrado,
+            df_total=df_total,
+            df_master=df_master,
+            anios_seleccionados=anios_seleccionados,
+            sexo_percepcion=sexo_percepcion,
+            delito_master=delito_master,
+        )
+    ])
+    st.session_state["analisis_ia_contexto_actual"] = contexto_chat_actual
 
     st.markdown(st.session_state["analisis_ia"])
 
-st.markdown("### Chat Sobre El Análisis")
-st.caption("Pregunta sobre el análisis generado o sobre los datos filtrados del tablero.")
+    st.markdown("### Chat Sobre El Análisis")
+    st.caption("Pregunta sobre el análisis generado o sobre los datos filtrados del tablero.")
 
-historial_chat = st.session_state.setdefault("chat_ia", [])
-st.session_state.setdefault("graficos_ia", [])
-graficos_chat_specs = st.session_state.setdefault("graficos_ia_specs", [])
-artefactos_chat_specs = st.session_state.setdefault("artefactos_ia_specs", [])
+    historial_chat = st.session_state.setdefault("chat_ia", [])
+    graficos_chat = st.session_state.setdefault("graficos_ia", [])
+    graficos_chat_specs = st.session_state.setdefault("graficos_ia_specs", [])
 
-if graficos_chat_specs and not any(mensaje.get("role") == "chart" for mensaje in historial_chat):
-    for item_grafico in graficos_chat_specs:
-        historial_chat.append({
-            "role": "chart",
-            "modo": item_grafico.get("modo", "pregunta"),
-            "pregunta": item_grafico.get("pregunta", ""),
-            "spec": item_grafico.get("spec"),
-            "nota": item_grafico.get("nota") or "Gráfico restaurado desde el estado guardado.",
-        })
-
-if artefactos_chat_specs and not any(mensaje.get("role") == "table" for mensaje in historial_chat):
-    for item_tabla in artefactos_chat_specs:
-        historial_chat.append({
-            "role": "table",
-            "tipo": item_tabla.get("tipo", "tabla"),
-            "pregunta": item_tabla.get("pregunta", ""),
-            "nota": item_tabla.get("nota"),
-        })
-
-for mensaje in historial_chat:
-    if mensaje.get("role") == "chart":
-        mostrar_grafico_chat(
-            mensaje,
-            df_filtrado=df_filtrado,
-            df_total=df_total,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
-            sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
-        )
-    elif mensaje.get("role") == "table":
-        mostrar_tabla_chat(
-            mensaje,
-            df_master=df_master,
-            df_filtrado=df_filtrado,
-            anios_seleccionados=anios_seleccionados,
-            delito_master=delito_master,
-        )
-    else:
-        mostrar_mensaje_chat(mensaje)
-
-pregunta_pendiente = st.session_state.get("pregunta_ia_pendiente")
-if pregunta_pendiente:
-    with st.spinner("La IA está revisando los datos filtrados..."):
-        mostrar_mensaje_chat({
-            "role": "assistant",
-            "content": "Analizando los datos actuales del tablero..."
-        })
-
-        modelo_ia_chat = cargar_modelo_ia(obtener_gemini_api_key())
-
-        if modelo_ia_chat is None:
-            respuesta_chat = (
-                "No pude conectar con Gemini. Revisa la instalación de google-generativeai "
-                "y la API key."
-            )
-        else:
-            try:
-                respuesta_chat = responder_chat_ia(
-                    modelo=modelo_ia_chat,
-                    contexto=st.session_state.get("analisis_ia_contexto_actual", ""),
-                    analisis=st.session_state.get(
-                        "analisis_ia",
-                        "Aún no se ha generado reporte ejecutivo; responde con el contexto estadístico actual."
-                    ),
-                    historial=historial_chat,
-                    pregunta=pregunta_pendiente,
-                )
-            except Exception as error:
-                respuesta_chat = f"No pude responder en este momento: {error}"
-
-        if not str(respuesta_chat).strip():
-            respuesta_chat = "No recibí una respuesta útil de la IA. Intenta reformularlo con la variable o gráfica que quieres ver."
-
-        historial_chat.append({"role": "assistant", "content": respuesta_chat})
-
-        debe_generar_grafico = (
-            pregunta_pide_grafico(pregunta_pendiente) or
-            respuesta_indica_grafico(respuesta_chat) or
-            pregunta_continua_grafico(pregunta_pendiente, historial_chat)
-        )
-        debe_generar_tabla = pregunta_pide_tabla(pregunta_pendiente)
-        debe_generar_calculo = pregunta_pide_calculo(pregunta_pendiente)
-
-        fig_chat, nota_chat = crear_grafico_desde_pregunta(
-            pregunta=pregunta_pendiente,
-            df_filtrado=df_filtrado,
-            df_total=df_total,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
-            sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
-        )
-
-        spec_grafico = None
-        modo_grafico = "pregunta"
-        if fig_chat is None and debe_generar_grafico and modelo_ia_chat is not None:
-            try:
-                pregunta_para_spec = "\n".join([
-                    pregunta_pendiente,
-                    f"Respuesta tentativa de la IA: {respuesta_chat}",
-                ])
-                spec_grafico = solicitar_especificacion_grafico_ia(
-                    modelo=modelo_ia_chat,
-                    pregunta=pregunta_para_spec,
-                    contexto=st.session_state.get("analisis_ia_contexto_actual", ""),
-                )
-                fig_chat, nota_chat = crear_grafico_desde_spec_ia(
-                    spec=spec_grafico,
+    if not graficos_chat and graficos_chat_specs:
+        for item_grafico in graficos_chat_specs:
+            fig_reconstruida = None
+            nota_reconstruida = item_grafico.get("nota")
+            if item_grafico.get("modo") == "spec":
+                fig_reconstruida, nota_auto = crear_grafico_desde_spec_ia(
+                    spec=item_grafico.get("spec"),
                     df_filtrado=df_filtrado,
                     df_total=df_total,
                     df_master=df_master,
@@ -4073,92 +3191,179 @@ if pregunta_pendiente:
                     sexo_percepcion=sexo_percepcion,
                     delito_master=delito_master,
                 )
-                modo_grafico = "spec"
-            except Exception as error:
-                nota_chat = f"No pude convertir la solicitud en un gráfico válido: {error}"
-
-        if fig_chat is not None:
-            mensaje_grafico = {
-                "role": "chart",
-                "modo": modo_grafico,
-                "pregunta": pregunta_pendiente,
-                "spec": spec_grafico,
-                "nota": nota_chat,
-            }
-            historial_chat.append(mensaje_grafico)
-            graficos_chat_specs.append({
-                "modo": modo_grafico,
-                "pregunta": pregunta_pendiente,
-                "spec": spec_grafico,
-                "nota": nota_chat,
-            })
-        elif nota_chat and debe_generar_grafico:
-            historial_chat.append({"role": "assistant", "content": nota_chat})
-
-        if debe_generar_tabla or debe_generar_calculo:
-            tipo_artefacto = "calculo" if debe_generar_calculo else "tabla"
-            if tipo_artefacto == "calculo":
-                tabla_ia, nota_tabla = construir_calculo_chat(
-                    pregunta_pendiente,
-                    df_master=df_master,
-                    df_filtrado=df_filtrado,
-                    anios_seleccionados=anios_seleccionados,
-                )
+                nota_reconstruida = nota_reconstruida or nota_auto
             else:
-                tabla_ia, nota_tabla = construir_tabla_chat(
-                    pregunta_pendiente,
-                    df_master=df_master,
+                fig_reconstruida, nota_auto = crear_grafico_desde_pregunta(
+                    pregunta=item_grafico.get("pregunta", ""),
                     df_filtrado=df_filtrado,
+                    df_total=df_total,
+                    df_master=df_master,
                     anios_seleccionados=anios_seleccionados,
+                    sexo_percepcion=sexo_percepcion,
                     delito_master=delito_master,
                 )
+                nota_reconstruida = nota_reconstruida or nota_auto
 
-            if tabla_ia is not None and not tabla_ia.empty:
-                mensaje_tabla = {
-                    "role": "table",
-                    "tipo": tipo_artefacto,
-                    "pregunta": pregunta_pendiente,
-                    "nota": nota_tabla,
-                }
-                historial_chat.append(mensaje_tabla)
-                artefactos_chat_specs.append({
-                    "tipo": tipo_artefacto,
-                    "pregunta": pregunta_pendiente,
-                    "nota": nota_tabla,
+            if fig_reconstruida is not None:
+                graficos_chat.append({
+                    "nota": nota_reconstruida or "Gráfico restaurado desde el estado guardado.",
+                    "fig": fig_reconstruida,
                 })
-            elif nota_tabla:
-                historial_chat.append({"role": "assistant", "content": nota_tabla})
 
-        st.session_state.pop("pregunta_ia_pendiente", None)
-        st.session_state["ai_autoscroll_ready"] = True
+    for mensaje in historial_chat:
+        mostrar_mensaje_chat(mensaje)
+
+    pregunta_pendiente = st.session_state.get("pregunta_ia_pendiente")
+    if pregunta_pendiente:
+        with st.spinner("La IA está revisando los datos filtrados..."):
+            mostrar_mensaje_chat({
+                "role": "assistant",
+                "content": "Analizando los datos actuales del tablero..."
+            })
+
+            modelo_ia_chat = cargar_modelo_ia(obtener_gemini_api_key())
+
+            if modelo_ia_chat is None:
+                respuesta_chat = (
+                    "No pude conectar con Gemini. Revisa la instalación de google-generativeai "
+                    "y la API key."
+                )
+            else:
+                try:
+                    respuesta_chat = responder_chat_ia(
+                        modelo=modelo_ia_chat,
+                        contexto=st.session_state.get("analisis_ia_contexto_actual", ""),
+                        analisis=st.session_state["analisis_ia"],
+                        historial=historial_chat,
+                        pregunta=pregunta_pendiente,
+                    )
+                except Exception as error:
+                    respuesta_chat = f"No pude responder en este momento: {error}"
+
+            historial_chat.append({"role": "assistant", "content": respuesta_chat})
+
+            fig_chat, nota_chat = crear_grafico_desde_pregunta(
+                pregunta=pregunta_pendiente,
+                df_filtrado=df_filtrado,
+                df_total=df_total,
+                df_master=df_master,
+                anios_seleccionados=anios_seleccionados,
+                sexo_percepcion=sexo_percepcion,
+                delito_master=delito_master,
+            )
+
+            spec_grafico = None
+            modo_grafico = "pregunta"
+            if fig_chat is None and pregunta_pide_grafico(pregunta_pendiente) and modelo_ia_chat is not None:
+                try:
+                    spec_grafico = solicitar_especificacion_grafico_ia(
+                        modelo=modelo_ia_chat,
+                        pregunta=pregunta_pendiente,
+                        contexto=st.session_state.get("analisis_ia_contexto_actual", ""),
+                    )
+                    fig_chat, nota_chat = crear_grafico_desde_spec_ia(
+                        spec=spec_grafico,
+                        df_filtrado=df_filtrado,
+                        df_total=df_total,
+                        df_master=df_master,
+                        anios_seleccionados=anios_seleccionados,
+                        sexo_percepcion=sexo_percepcion,
+                        delito_master=delito_master,
+                    )
+                    modo_grafico = "spec"
+                except Exception as error:
+                    nota_chat = f"No pude convertir la solicitud en un gráfico válido: {error}"
+
+            if fig_chat is not None:
+                graficos_chat.append({"nota": nota_chat, "fig": fig_chat})
+                graficos_chat_specs.append({
+                    "modo": modo_grafico,
+                    "pregunta": pregunta_pendiente,
+                    "spec": spec_grafico,
+                    "nota": nota_chat,
+                })
+            elif nota_chat and pregunta_pide_grafico(pregunta_pendiente):
+                historial_chat.append({"role": "assistant", "content": nota_chat})
+
+            st.session_state.pop("pregunta_ia_pendiente", None)
+            st.session_state["ai_autoscroll_ready"] = True
+            st.rerun()
+
+    for grafico in graficos_chat:
+        st.markdown(
+            f'<div class="generated-chart-note">{html.escape(grafico["nota"])}</div>',
+            unsafe_allow_html=True
+        )
+        st.plotly_chart(grafico["fig"], width="stretch", theme=None)
+
+    if st.session_state.pop("ai_autoscroll_ready", False):
+        st.markdown('<div data-ai-autoscroll="1"></div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="chat-form">', unsafe_allow_html=True)
+    with st.form("chat_ia_form", clear_on_submit=True):
+        pregunta_ia = st.text_input(
+            "Pregunta para la IA",
+            placeholder="Pregunta sobre el análisis o los datos filtrados",
+            label_visibility="collapsed"
+        )
+        enviar_pregunta = st.form_submit_button("Enviar")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if enviar_pregunta and pregunta_ia:
+        historial_chat.append({"role": "user", "content": pregunta_ia})
+        st.session_state["pregunta_ia_pendiente"] = pregunta_ia
         st.rerun()
 
-if st.session_state.pop("ai_autoscroll_ready", False):
-    st.markdown('<div data-ai-autoscroll="1"></div>', unsafe_allow_html=True)
-
-st.markdown('<div class="chat-form">', unsafe_allow_html=True)
-with st.form("chat_ia_form", clear_on_submit=True):
-    pregunta_ia = st.text_input(
-        "Pregunta para la IA",
-        placeholder="Pregunta sobre el análisis o los datos filtrados",
-        label_visibility="collapsed"
-    )
-    enviar_pregunta = st.form_submit_button("Enviar")
-st.markdown("</div>", unsafe_allow_html=True)
-
-if enviar_pregunta and pregunta_ia:
-    historial_chat.append({"role": "user", "content": pregunta_ia})
-    st.session_state["pregunta_ia_pendiente"] = pregunta_ia
-    st.rerun()
-
-guardar_estado_persistente({
+estado_cliente_actual = {
     "anios_globales": list(st.session_state.get("anios_globales", anios_seleccionados)),
     "estados_globales": list(st.session_state.get("estados_globales", estados_seleccionados)),
     "sexo_percepcion": st.session_state.get("sexo_percepcion", sexo_percepcion),
+    "tab2_delito": st.session_state.get("tab2_delito"),
+    "tab3_delito": st.session_state.get("tab3_delito"),
     "tab4_delito_master": st.session_state.get("tab4_delito_master", delito_master),
-    "analisis_ia": st.session_state.get("analisis_ia"),
-    "analisis_ia_contexto": st.session_state.get("analisis_ia_contexto"),
-    "chat_ia": st.session_state.get("chat_ia", []),
-    "graficos_ia_specs": st.session_state.get("graficos_ia_specs", []),
-    "artefactos_ia_specs": st.session_state.get("artefactos_ia_specs", []),
-})
+    "tab4_grafica1_x": st.session_state.get("tab4_grafica1_x"),
+    "tab4_grafica1_y": st.session_state.get("tab4_grafica1_y"),
+    "tab4_grafica1_tamano": st.session_state.get("tab4_grafica1_tamano"),
+    "tab4_grafica1_color": st.session_state.get("tab4_grafica1_color"),
+    "tab4_grafica2_metrica_a": st.session_state.get("tab4_grafica2_metrica_a"),
+    "tab4_grafica2_metrica_b": st.session_state.get("tab4_grafica2_metrica_b"),
+    "tab4_linea_a": st.session_state.get("tab4_linea_a"),
+    "tab4_linea_b": st.session_state.get("tab4_linea_b"),
+    "tab4_metodo_corr": st.session_state.get("tab4_metodo_corr"),
+    "tab4_nivel_corr": st.session_state.get("tab4_nivel_corr"),
+    "tab4_variables_corr": st.session_state.get("tab4_variables_corr"),
+    "tab4_eje_x": st.session_state.get("tab4_eje_x"),
+    "tab4_eje_y": st.session_state.get("tab4_eje_y"),
+    "tab4_tamano": st.session_state.get("tab4_tamano"),
+    "tab4_color": st.session_state.get("tab4_color"),
+}
+estado_cliente_actual = {
+    clave: valor
+    for clave, valor in estado_cliente_actual.items()
+    if valor is not None
+}
+estado_cliente_codificado = codificar_estado_cliente(estado_cliente_actual)
+
+components.html(
+    f"""
+    <script>
+    (() => {{
+        const win = window.parent;
+        const key = "seguridadMxDashboardClientState";
+        const encoded = {json.dumps(estado_cliente_codificado)};
+        const state = {json.dumps(estado_cliente_actual, ensure_ascii=False, default=str)};
+        try {{
+            win.localStorage.setItem(key, JSON.stringify({{ encoded, state, updatedAt: Date.now() }}));
+            const url = new URL(win.location.href);
+            if (url.searchParams.get("client_state") !== encoded && !url.searchParams.has("reset_dashboard")) {{
+                url.searchParams.set("client_state", encoded);
+                win.history.replaceState(null, "", url.toString());
+            }}
+        }} catch (error) {{
+            return;
+        }}
+    }})();
+    </script>
+    """,
+    height=0,
+)
