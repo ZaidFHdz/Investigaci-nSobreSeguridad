@@ -48,13 +48,14 @@ def codificar_estado_cliente(estado):
 def borrar_estado_persistente():
     pass
 
+
+ESTADO_PERSISTENTE = cargar_estado_persistente()
+
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Dashboard de Seguridad MX",
     layout="wide"
 )
-
-ESTADO_PERSISTENTE = cargar_estado_persistente()
 
 if st.query_params.get("reset_dashboard") == "1":
     borrar_estado_persistente()
@@ -62,7 +63,25 @@ if st.query_params.get("reset_dashboard") == "1":
         "anios_globales",
         "estados_globales",
         "sexo_percepcion",
+        "tab2_delito",
+        "tab3_delito",
         "tab4_delito_master",
+        "tab4_grafica1_x",
+        "tab4_grafica1_y",
+        "tab4_grafica1_tamano",
+        "tab4_grafica1_color",
+        "tab4_grafica2_metrica_a",
+        "tab4_grafica2_metrica_b",
+        "tab4_grafica3_metrica",
+        "tab4_linea_a",
+        "tab4_linea_b",
+        "tab4_metodo_corr",
+        "tab4_nivel_corr",
+        "tab4_variables_corr",
+        "tab4_eje_x",
+        "tab4_eje_y",
+        "tab4_tamano",
+        "tab4_color",
         "analisis_ia",
         "analisis_ia_contexto",
         "analisis_ia_contexto_actual",
@@ -516,14 +535,26 @@ st.markdown("""
     .sidebar-heading,
     .side-nav a,
     .reset-link,
-    .section-title h2 {
-        transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease, opacity 180ms ease;
+    .section-title h2,
+    div[data-testid="stPlotlyChart"],
+    div[data-testid="stForm"],
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="input"] > div,
+    button {
+        transition:
+            transform 180ms ease,
+            border-color 180ms ease,
+            background-color 180ms ease,
+            opacity 180ms ease,
+            box-shadow 180ms ease;
     }
 
     .side-brand:hover,
     .sidebar-heading:hover,
     .side-nav a:hover,
-    .reset-link:hover {
+    .reset-link:hover,
+    div[data-testid="stPlotlyChart"]:hover,
+    button:hover {
         transform: translateY(-1.5px);
     }
 
@@ -531,12 +562,22 @@ st.markdown("""
         transform: translateY(-2px);
     }
 
+    div[data-baseweb="select"] > div:hover,
+    div[data-baseweb="input"] > div:hover {
+        transform: translateY(-1px);
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .side-brand,
         .sidebar-heading,
         .side-nav a,
         .reset-link,
-        .section-title h2 {
+        .section-title h2,
+        div[data-testid="stPlotlyChart"],
+        div[data-testid="stForm"],
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        button {
             transition: none !important;
         }
 
@@ -544,7 +585,11 @@ st.markdown("""
         .sidebar-heading:hover,
         .side-nav a:hover,
         .reset-link:hover,
-        .section-title:hover h2 {
+        .section-title:hover h2,
+        div[data-testid="stPlotlyChart"]:hover,
+        div[data-baseweb="select"] > div:hover,
+        div[data-baseweb="input"] > div:hover,
+        button:hover {
             transform: none !important;
         }
     }
@@ -748,7 +793,7 @@ st.markdown(
     <div class="desktop-only-blocker">
         <div class="desktop-only-blocker-card">
             <strong>Disponible Solo En Computadora</strong>
-            <p>Este tablero está diseñado para mouse, teclado y pantalla amplia. Para evitar errores con filtros, gráficas y chat, ábrelo desde Windows, macOS, Linux o una computadora de escritorio/portátil.</p>
+            <p>Este tablero está diseñado para mouse, teclado y pantalla amplia. Para evitar problemas con filtros, gráficas y chat, ábrelo desde Windows, macOS, Linux o una computadora de escritorio/portátil.</p>
         </div>
     </div>
     """,
@@ -789,11 +834,15 @@ st.markdown(
     }}
 
     section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
-        min-height: 4.1rem !important;
+        min-height: 4.25rem !important;
+        align-items: flex-start !important;
+        padding-top: 0.45rem !important;
+        padding-bottom: 0.45rem !important;
     }}
 
     section[data-testid="stSidebar"] [data-baseweb="tag"] {{
         max-width: 18rem !important;
+        margin-bottom: 0.25rem !important;
     }}
 
     section[data-testid="stSidebar"] [data-baseweb="tag"] span {{
@@ -2544,10 +2593,8 @@ if cols_ie and cols_cn and cols_itd:
 
             # --- GRÁFICA 1: BURBUJAS ---
             st.markdown("### 1. El Panorama Completo (Burbujas)")
-            col_b1, col_b2, col_b3, col_b4 = st.columns(4)
             opciones_burbuja = list(metricas_cruce.keys())
             opciones_color_burbuja = ["Entidad federativa", "Año", "Delito"]
-
             for clave, opciones in {
                 "tab4_grafica1_x": opciones_burbuja,
                 "tab4_grafica1_y": opciones_burbuja,
@@ -2556,6 +2603,7 @@ if cols_ie and cols_cn and cols_itd:
             }.items():
                 restaurar_widget_desde_cliente(clave, opciones)
 
+            col_b1, col_b2, col_b3, col_b4 = st.columns(4)
             with col_b1:
                 burbuja_x = st.selectbox(
                     "Eje X:",
@@ -2700,18 +2748,36 @@ if cols_ie and cols_cn and cols_itd:
             with col2:
                 # --- GRÁFICA 3: PASTEL ---
                 st.markdown("### 3. Proporción De Denuncias")
+                opciones_pastel = ["Cifra_Negra", "Percepcion"]
+                restaurar_widget_desde_cliente("tab4_grafica3_metrica", opciones_pastel)
+                metrica_pastel = st.selectbox(
+                    "Proporción basada en:",
+                    opciones_pastel,
+                    format_func=lambda valor: metricas_cruce[valor],
+                    key="tab4_grafica3_metrica",
+                )
 
-                promedio_cn = df_master["Cifra_Negra"].mean()
-                promedio_denunciado = 100 - promedio_cn
+                promedio_pastel = float(np.clip(df_master[metrica_pastel].mean(), 0, 100))
+                complemento_pastel = 100 - promedio_pastel
+                etiqueta_principal = (
+                    "No Denunciado (Cifra Negra)"
+                    if metrica_pastel == "Cifra_Negra"
+                    else "Población Que Percibe Inseguridad"
+                )
+                etiqueta_complemento = (
+                    "Denunciado Formalmente"
+                    if metrica_pastel == "Cifra_Negra"
+                    else "Resto De La Población"
+                )
 
                 df_pastel = pd.DataFrame({
                     "Estado Legal": [
-                        "No Denunciado (Cifra Negra)",
-                        "Denunciado Formalmente"
+                        etiqueta_principal,
+                        etiqueta_complemento,
                     ],
                     "Porcentaje": [
-                        promedio_cn,
-                        promedio_denunciado
+                        promedio_pastel,
+                        complemento_pastel,
                     ]
                 })
 
@@ -2719,12 +2785,12 @@ if cols_ie and cols_cn and cols_itd:
                     df_pastel,
                     names="Estado Legal",
                     values="Porcentaje",
-                    title=f"Distribución General Nacional ({delito_master})",
+                    title=f"{metricas_cruce[metrica_pastel]} Promedio ({delito_master})",
                     hole=0.4,
                     color="Estado Legal",
                     color_discrete_map={
-                        "No Denunciado (Cifra Negra)": COLOR_ACENTO,
-                        "Denunciado Formalmente": COLOR_TERCIARIO
+                        etiqueta_principal: COLOR_ACENTO,
+                        etiqueta_complemento: COLOR_TERCIARIO,
                     }
                 )
 
@@ -3327,6 +3393,7 @@ estado_cliente_actual = {
     "tab4_grafica1_color": st.session_state.get("tab4_grafica1_color"),
     "tab4_grafica2_metrica_a": st.session_state.get("tab4_grafica2_metrica_a"),
     "tab4_grafica2_metrica_b": st.session_state.get("tab4_grafica2_metrica_b"),
+    "tab4_grafica3_metrica": st.session_state.get("tab4_grafica3_metrica"),
     "tab4_linea_a": st.session_state.get("tab4_linea_a"),
     "tab4_linea_b": st.session_state.get("tab4_linea_b"),
     "tab4_metodo_corr": st.session_state.get("tab4_metodo_corr"),
