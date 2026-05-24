@@ -15,7 +15,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.03"
+APP_VERSION = "V1.04"
 
 
 def cargar_estado_persistente():
@@ -213,6 +213,20 @@ st.markdown("""
     header[data-testid="stHeader"] {
         background: transparent;
         height: 0 !important;
+    }
+
+    div[data-testid="stSidebarCollapsedControl"],
+    div[data-testid="collapsedControl"],
+    button[data-testid="stSidebarCollapsedControl"],
+    button[data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        position: fixed !important;
+        top: 0.85rem !important;
+        left: 0.85rem !important;
+        z-index: 999998 !important;
     }
 
     section[data-testid="stSidebar"] {
@@ -1359,6 +1373,35 @@ def pregunta_pide_grafico(pregunta):
     return any(clave in texto for clave in claves)
 
 
+def respuesta_indica_grafico(respuesta):
+    texto = (respuesta or "").lower()
+    claves = [
+        "voy a visualizar", "se visualizar", "se visualizará", "visualizaré",
+        "voy a graficar", "se graficar", "gráfico", "grafico", "gráfica",
+        "matriz de correlación", "dispersión", "scatter", "barras", "pastel",
+        "heatmap", "mapa de correlación"
+    ]
+    return any(clave in texto for clave in claves)
+
+
+def pregunta_continua_grafico(pregunta, historial):
+    texto = (pregunta or "").lower().strip()
+    if not texto:
+        return False
+
+    claves_cortas = [
+        "general", "esos estados", "disponibles", "esa", "ese",
+        "ahora", "lo mismo", "otra variable", "con otra variable"
+    ]
+    if not any(clave in texto for clave in claves_cortas):
+        return False
+
+    return any(
+        mensaje.get("role") == "chart" or pregunta_pide_grafico(mensaje.get("content", ""))
+        for mensaje in historial[-6:]
+    )
+
+
 def metrica_pedida(texto, default="Cifra_Negra"):
     if "percep" in texto or "inseguridad" in texto:
         return "Percepcion"
@@ -2373,6 +2416,11 @@ components.html(
 
         let timer;
         let refreshTimer;
+        const markAiPositionNow = () => {
+            win.sessionStorage.setItem("dashboardAiSendY", String(win.scrollY));
+            win.sessionStorage.setItem("dashboardAiSendAt", String(Date.now()));
+        };
+
         const scheduleSync = () => {
             win.clearTimeout(timer);
             timer = win.setTimeout(syncPlotTheme, 120);
@@ -2393,8 +2441,7 @@ components.html(
             if (!button) return;
             const text = (button.innerText || "").trim().toLowerCase();
             if (text !== "enviar") return;
-            win.sessionStorage.setItem("dashboardAiSendY", String(win.scrollY));
-            win.sessionStorage.setItem("dashboardAiSendAt", String(Date.now()));
+            markAiPositionNow();
         };
 
         const markReportGeneratePosition = (event) => {
@@ -2444,6 +2491,12 @@ components.html(
             if (event.target.closest('input, select, textarea, [data-baseweb="select"]')) {
                 animateRefresh();
             }
+        }, true);
+
+        doc.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" || event.shiftKey) return;
+            if (!event.target.closest('.chat-form input, .chat-form textarea')) return;
+            markAiPositionNow();
         }, true);
 
         doc.addEventListener("click", (event) => {
@@ -3510,6 +3563,12 @@ if st.session_state.get("analisis_ia"):
 
             historial_chat.append({"role": "assistant", "content": respuesta_chat})
 
+            debe_generar_grafico = (
+                pregunta_pide_grafico(pregunta_pendiente) or
+                respuesta_indica_grafico(respuesta_chat) or
+                pregunta_continua_grafico(pregunta_pendiente, historial_chat)
+            )
+
             fig_chat, nota_chat = crear_grafico_desde_pregunta(
                 pregunta=pregunta_pendiente,
                 df_filtrado=df_filtrado,
@@ -3522,11 +3581,15 @@ if st.session_state.get("analisis_ia"):
 
             spec_grafico = None
             modo_grafico = "pregunta"
-            if fig_chat is None and pregunta_pide_grafico(pregunta_pendiente) and modelo_ia_chat is not None:
+            if fig_chat is None and debe_generar_grafico and modelo_ia_chat is not None:
                 try:
+                    pregunta_para_spec = "\n".join([
+                        pregunta_pendiente,
+                        f"Respuesta tentativa de la IA: {respuesta_chat}",
+                    ])
                     spec_grafico = solicitar_especificacion_grafico_ia(
                         modelo=modelo_ia_chat,
-                        pregunta=pregunta_pendiente,
+                        pregunta=pregunta_para_spec,
                         contexto=st.session_state.get("analisis_ia_contexto_actual", ""),
                     )
                     fig_chat, nota_chat = crear_grafico_desde_spec_ia(
@@ -3557,7 +3620,7 @@ if st.session_state.get("analisis_ia"):
                     "spec": spec_grafico,
                     "nota": nota_chat,
                 })
-            elif nota_chat and pregunta_pide_grafico(pregunta_pendiente):
+            elif nota_chat and debe_generar_grafico:
                 historial_chat.append({"role": "assistant", "content": nota_chat})
 
             st.session_state.pop("pregunta_ia_pendiente", None)
