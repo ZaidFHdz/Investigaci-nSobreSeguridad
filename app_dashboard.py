@@ -15,7 +15,7 @@ except ImportError:
     genai = None
 
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.10"
+APP_VERSION = "V1.11"
 CLIENT_STATE_PARAM = "client_state"
 
 
@@ -214,6 +214,38 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         background: var(--app-soft);
         border-right: 1px solid var(--app-border);
+    }
+
+    body.app-sidebar-collapsed section[data-testid="stSidebar"] {
+        transform: translateX(-110%) !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        border-right: 0 !important;
+        overflow: hidden !important;
+    }
+
+    body.app-sidebar-collapsed div[data-testid="stSidebarCollapsedControl"],
+    body.app-sidebar-collapsed div[data-testid="collapsedControl"],
+    body.app-sidebar-collapsed button[data-testid="stSidebarCollapsedControl"],
+    body.app-sidebar-collapsed button[data-testid="collapsedControl"] {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+
+    .sidebar-hover-zone {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 88px;
+        z-index: 999999;
+        background: transparent;
+        pointer-events: auto;
+        display: none;
+    }
+
+    body.app-sidebar-collapsed .sidebar-hover-zone {
+        display: block;
     }
 
     section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {
@@ -2086,6 +2118,58 @@ components.html(
             timer = win.setTimeout(syncPlotTheme, 120);
         };
 
+        const findSidebarButton = () => {
+            const selectors = [
+                '[data-testid="stSidebarCollapsedControl"] button',
+                'button[data-testid="stSidebarCollapsedControl"]',
+                '[data-testid="collapsedControl"] button',
+                'button[data-testid="collapsedControl"]',
+                '[data-testid="stSidebarCollapseButton"] button',
+                'button[data-testid="stSidebarCollapseButton"]',
+                'button[kind="headerNoPadding"]',
+                'button[data-testid="stBaseButton-headerNoPadding"]',
+                'button[data-testid="baseButton-headerNoPadding"]'
+            ];
+            for (const selector of selectors) {
+                const button = doc.querySelector(selector);
+                if (button) return button;
+            }
+            return null;
+        };
+
+        const isElementVisible = (element) => {
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            const styles = win.getComputedStyle(element);
+            return rect.width > 0 && rect.height > 0 && styles.display !== "none" && styles.visibility !== "hidden";
+        };
+
+        const syncSidebarState = () => {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            const collapsedControl = doc.querySelector('[data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"]');
+            const sidebarWidth = sidebar ? sidebar.getBoundingClientRect().width : 0;
+            const collapsed = (sidebar && sidebarWidth <= 96) || isElementVisible(collapsedControl);
+            doc.body.classList.toggle("app-sidebar-collapsed", Boolean(collapsed));
+        };
+
+        const openSidebarFromEdge = () => {
+            if (!doc.body.classList.contains("app-sidebar-collapsed")) return;
+            const button = findSidebarButton();
+            if (button) button.click();
+        };
+
+        const ensureSidebarHoverZone = () => {
+            let zone = doc.querySelector(".sidebar-hover-zone");
+            if (!zone) {
+                zone = doc.createElement("div");
+                zone.className = "sidebar-hover-zone";
+                zone.setAttribute("aria-hidden", "true");
+                doc.body.appendChild(zone);
+                zone.addEventListener("mouseenter", openSidebarFromEdge);
+                zone.addEventListener("mousemove", openSidebarFromEdge);
+            }
+        };
+
         const markAiSendPosition = (event) => {
             const button = event.target.closest("button");
             if (!button) return;
@@ -2143,6 +2227,8 @@ components.html(
         new MutationObserver(() => {
             doc.querySelectorAll('[title="streamlitApp"]').forEach((node) => node.removeAttribute("title"));
             syncDesktopGate();
+            syncSidebarState();
+            ensureSidebarHoverZone();
             scheduleSync();
             maybeScrollToAiResponse();
         }).observe(doc.body, {
@@ -2154,6 +2240,9 @@ components.html(
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
         win.matchMedia("(pointer: coarse)").addEventListener("change", syncDesktopGate);
         win.matchMedia("(hover: none)").addEventListener("change", syncDesktopGate);
+        win.addEventListener("resize", syncSidebarState);
+        syncSidebarState();
+        ensureSidebarHoverZone();
         scheduleSync();
         maybeScrollToAiResponse();
     })();
