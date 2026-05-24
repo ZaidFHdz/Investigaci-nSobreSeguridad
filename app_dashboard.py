@@ -15,6 +15,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
+APP_VERSION = "V1.01"
 
 
 def cargar_estado_persistente():
@@ -72,6 +73,7 @@ if st.query_params.get("reset_dashboard") == "1":
         "graficos_ia_specs",
         "pregunta_ia_pendiente",
         "ai_autoscroll_ready",
+        "report_autoscroll_ready",
     ]:
         st.session_state.pop(clave, None)
     st.query_params.clear()
@@ -135,6 +137,49 @@ st.markdown("""
     div[data-testid="stAppViewContainer"].app-refreshing {
         filter: blur(2px) brightness(0.82);
         opacity: 0.82;
+    }
+
+    .mobile-blocker {
+        display: none;
+    }
+
+    @media (max-width: 760px) and (orientation: portrait) {
+        section[data-testid="stSidebar"],
+        header[data-testid="stHeader"] {
+            display: none !important;
+        }
+
+        .mobile-blocker {
+            position: fixed;
+            inset: 0;
+            z-index: 999999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: var(--app-bg);
+            color: var(--app-text);
+        }
+
+        .mobile-blocker-card {
+            width: min(100%, 25rem);
+            border: 1px solid var(--app-border);
+            border-radius: 8px;
+            background: var(--app-panel);
+            padding: 1.25rem;
+        }
+
+        .mobile-blocker-card strong {
+            display: block;
+            font-size: 1.25rem;
+            margin-bottom: 0.55rem;
+        }
+
+        .mobile-blocker-card p {
+            margin: 0;
+            color: var(--app-muted);
+            line-height: 1.5;
+        }
     }
 
     .block-container {
@@ -470,6 +515,16 @@ st.markdown("""
         color: #ffffff !important;
     }
 
+    .sidebar-version {
+        border-top: 1px solid var(--app-border);
+        color: var(--app-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0;
+        margin-top: 1.2rem;
+        padding-top: 0.75rem;
+    }
+
     .export-block {
         border-top: 1px solid var(--app-border);
         margin: -0.15rem 0 0;
@@ -609,23 +664,47 @@ st.markdown("""
     }
 
     div[role="dialog"],
-    div[data-testid="stModal"] {
+    div[data-testid="stModal"],
+    div[data-baseweb="modal"],
+    div[data-baseweb="popover"] {
         background: var(--app-panel) !important;
         color: var(--app-text) !important;
         border: 1px solid var(--app-border) !important;
     }
 
     div[role="dialog"] *,
-    div[data-testid="stModal"] * {
+    div[data-testid="stModal"] *,
+    div[data-baseweb="modal"] *,
+    div[data-baseweb="popover"] * {
         color: var(--app-text) !important;
     }
 
     div[role="dialog"] button,
-    div[data-testid="stModal"] button {
+    div[data-testid="stModal"] button,
+    div[data-baseweb="modal"] button,
+    div[data-baseweb="popover"] button {
         background: var(--app-panel) !important;
         color: var(--app-text) !important;
         border: 1px solid var(--app-border) !important;
         opacity: 1 !important;
+    }
+
+    div[role="dialog"] button[kind="primary"],
+    div[data-testid="stModal"] button[kind="primary"],
+    div[data-baseweb="modal"] button[kind="primary"] {
+        background: var(--app-invert) !important;
+        color: var(--app-invert-text) !important;
+    }
+
+    div[role="dialog"] code,
+    div[role="dialog"] pre,
+    div[data-testid="stModal"] code,
+    div[data-testid="stModal"] pre,
+    div[data-baseweb="modal"] code,
+    div[data-baseweb="modal"] pre {
+        background: var(--app-soft) !important;
+        color: var(--app-text) !important;
+        border: 1px solid var(--app-border) !important;
     }
 
     .chat-form {
@@ -633,6 +712,18 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="mobile-blocker">
+        <div class="mobile-blocker-card">
+            <strong>Vista No Disponible En Celular Vertical</strong>
+            <p>Este tablero necesita una pantalla ancha para leer filtros, gráficas y análisis. Úsalo en computadora o en iPad/tablet en horizontal.</p>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 tema_streamlit = st.context.theme.get("type") if st.context.theme else None
 MODO_OSCURO = tema_streamlit == "dark"
@@ -664,12 +755,24 @@ st.markdown(
 
     button:hover,
     button:focus,
+    input:hover,
+    input:focus,
+    input:focus-visible,
+    textarea:hover,
+    textarea:focus,
+    textarea:focus-visible,
     div[data-baseweb="select"] > div:hover,
     div[data-baseweb="select"] > div:focus-within,
     div[data-baseweb="input"] > div:focus-within {{
-        border-color: var(--app-invert) !important;
         box-shadow: none !important;
         outline: none !important;
+    }}
+
+    button:hover,
+    button:focus,
+    div[data-baseweb="select"] > div:hover,
+    div[data-baseweb="select"] > div:focus-within {{
+        border-color: var(--app-invert) !important;
     }}
 
     [data-baseweb="tag"] {{
@@ -722,7 +825,14 @@ st.markdown(
 
     div[data-testid="stTextInput"] input:focus,
     div[data-testid="stTextInput"] input:focus-visible,
-    div[data-testid="stTextInput"] input:invalid {{
+    div[data-testid="stTextInput"] input:invalid,
+    div[data-testid="stTextInput"] input[aria-invalid="true"],
+    div[data-testid="stTextInput"] div[data-baseweb="input"],
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div,
+    div[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within,
+    div[data-baseweb="input"][aria-invalid="true"],
+    div[data-baseweb="input"][data-invalid="true"] {{
         border-color: var(--app-border) !important;
         box-shadow: none !important;
         outline: none !important;
@@ -1207,7 +1317,8 @@ def pregunta_pide_grafico(pregunta):
         "tendencia", "visualización", "visualizacion", "pastel", "pie",
         "donut", "dona", "barras", "barra", "correlacion", "correlación",
         "matriz", "heatmap", "histograma", "dispersión", "dispersion",
-        "ranking", "comparacion", "comparación"
+        "ranking", "comparacion", "comparación", "relacion", "relación",
+        "contra", " vs ", "asociacion", "asociación"
     ]
     return any(clave in texto for clave in claves)
 
@@ -1426,6 +1537,47 @@ def grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados, titulo=None):
     return fig, "Comparación por sexo generada con ENVIPE filtrado."
 
 
+def grafico_relacion_cruce_chat(df_master, texto, titulo=None):
+    if df_master is None or df_master.empty:
+        return None, "No hay datos cruzados suficientes para visualizar esa relación."
+
+    etiquetas = etiquetas_metricas_cruce()
+    texto = texto.lower()
+
+    if "cifra" in texto and ("percep" in texto or "inseguridad" in texto):
+        x, y = "Percepcion", "Cifra_Negra"
+    elif "general" in texto and ("percep" in texto or "inseguridad" in texto):
+        x, y = "Percepcion", "Incidencia_General"
+    elif "general" in texto and ("cifra" in texto or "denunci" in texto):
+        x, y = "Incidencia_General", "Cifra_Negra"
+    elif "especific" in texto and ("percep" in texto or "inseguridad" in texto):
+        x, y = "Percepcion", "Incidencia_Especifica"
+    elif "especific" in texto and ("cifra" in texto or "denunci" in texto):
+        x, y = "Incidencia_Especifica", "Cifra_Negra"
+    else:
+        x, y = "Incidencia_Especifica", "Percepcion"
+
+    if df_master[x].nunique(dropna=True) < 2 or df_master[y].nunique(dropna=True) < 2:
+        return None, "No hay variación suficiente para graficar esa relación."
+
+    r = df_master[[x, y]].corr().iloc[0, 1]
+    fig = px.scatter(
+        df_master,
+        x=x,
+        y=y,
+        color="Entidad federativa",
+        size="Cifra_Negra" if "Cifra_Negra" not in {x, y} else "Incidencia_General",
+        hover_data=["Año", "Delito", "Incidencia_General"],
+        title=titulo or f"{etiquetas[y]} vs {etiquetas[x]} | r = {r:.3f}",
+        labels=etiquetas,
+        color_discrete_sequence=paleta_entidades(df_master),
+        opacity=0.78,
+    )
+    aplicar_estilo_figura(fig)
+    ajustar_legenda_larga(fig, df_master)
+    return fig, "Dispersión generada con el cruce 360 filtrado."
+
+
 def crear_grafico_desde_pregunta(
     pregunta,
     df_filtrado,
@@ -1442,6 +1594,9 @@ def crear_grafico_desde_pregunta(
 
     if "correl" in texto or "matriz" in texto or "heatmap" in texto:
         return grafico_correlacion_chat(df_master)
+
+    if "relacion" in texto or "relación" in texto or " vs " in texto or "contra" in texto or "asociacion" in texto or "asociación" in texto:
+        return grafico_relacion_cruce_chat(df_master, texto)
 
     if "pastel" in texto or "pie" in texto or "donut" in texto or "dona" in texto or "proporcion" in texto or "proporción" in texto:
         return grafico_pastel_denuncias_chat(
@@ -2070,7 +2225,7 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 st.sidebar.markdown(
-    """
+    f"""
     <nav class="side-nav">
         <a href="#percepcion-envipe">Percepción ENVIPE</a>
         <a href="#cifra-negra">Cifra Negra</a>
@@ -2079,6 +2234,7 @@ st.sidebar.markdown(
         <a href="#analisis-ia">Análisis Con IA</a>
     </nav>
     <a class="reset-link" href="?reset_dashboard=1">Restablecer A Default</a>
+    <div class="sidebar-version">Versión {APP_VERSION}</div>
     """,
     unsafe_allow_html=True
 )
@@ -2205,6 +2361,15 @@ components.html(
             win.sessionStorage.setItem("dashboardAiSendAt", String(Date.now()));
         };
 
+        const markReportGeneratePosition = (event) => {
+            const button = event.target.closest("button");
+            if (!button) return;
+            const text = (button.innerText || "").trim().toLowerCase();
+            if (text !== "generar análisis con ia") return;
+            win.sessionStorage.setItem("dashboardReportSendY", String(win.scrollY));
+            win.sessionStorage.setItem("dashboardReportSendAt", String(Date.now()));
+        };
+
         const maybeScrollToAiResponse = () => {
             const marker = doc.querySelector('[data-ai-autoscroll="1"]');
             if (!marker || marker.dataset.done === "1") return;
@@ -2222,6 +2387,23 @@ components.html(
             }
         };
 
+        const maybeScrollToReport = () => {
+            const marker = doc.querySelector('[data-report-autoscroll="1"]');
+            if (!marker || marker.dataset.done === "1") return;
+
+            const sentAt = Number(win.sessionStorage.getItem("dashboardReportSendAt") || 0);
+            const sentY = Number(win.sessionStorage.getItem("dashboardReportSendY") || 0);
+            const recent = Date.now() - sentAt < 60000;
+            const userStayed = Math.abs(win.scrollY - sentY) < 90;
+
+            if (recent && userStayed) {
+                marker.dataset.done = "1";
+                win.setTimeout(() => {
+                    marker.scrollIntoView({ behavior: "smooth", block: "start" });
+                }, 160);
+            }
+        };
+
         doc.addEventListener("change", (event) => {
             if (event.target.closest('input, select, textarea, [data-baseweb="select"]')) {
                 animateRefresh();
@@ -2230,6 +2412,7 @@ components.html(
 
         doc.addEventListener("click", (event) => {
             markAiSendPosition(event);
+            markReportGeneratePosition(event);
             if (event.target.closest('button, [role="option"], [data-baseweb="tag"]')) {
                 animateRefresh();
             }
@@ -2249,6 +2432,7 @@ components.html(
         new MutationObserver(() => {
             scheduleSync();
             maybeScrollToAiResponse();
+            maybeScrollToReport();
         }).observe(doc.body, {
             attributes: true,
             childList: true,
@@ -2258,6 +2442,7 @@ components.html(
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
         scheduleSync();
         maybeScrollToAiResponse();
+        maybeScrollToReport();
     })();
     </script>
     """,
@@ -3194,6 +3379,7 @@ if st.button("Generar análisis con IA", type="primary"):
                 st.session_state["chat_ia"] = []
                 st.session_state["graficos_ia"] = []
                 st.session_state["graficos_ia_specs"] = []
+                st.session_state["report_autoscroll_ready"] = True
             except Exception as error:
                 st.session_state.pop("analisis_ia", None)
                 st.session_state.pop("analisis_ia_contexto", None)
@@ -3219,6 +3405,9 @@ if st.session_state.get("analisis_ia"):
         )
     ])
     st.session_state["analisis_ia_contexto_actual"] = contexto_chat_actual
+
+    if st.session_state.pop("report_autoscroll_ready", False):
+        st.markdown('<div data-report-autoscroll="1"></div>', unsafe_allow_html=True)
 
     st.markdown(st.session_state["analisis_ia"])
 
@@ -3279,6 +3468,9 @@ if st.session_state.get("analisis_ia"):
                     )
                 except Exception as error:
                     respuesta_chat = f"No pude responder en este momento: {error}"
+
+            if not str(respuesta_chat).strip():
+                respuesta_chat = "No recibí una respuesta útil de la IA. Intenta reformularlo con la variable o gráfica que quieres ver."
 
             historial_chat.append({"role": "assistant", "content": respuesta_chat})
 
