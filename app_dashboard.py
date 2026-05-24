@@ -15,7 +15,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.02"
+APP_VERSION = "V1.03"
 
 
 def cargar_estado_persistente():
@@ -708,13 +708,39 @@ st.markdown("""
 
     div[role="dialog"] code,
     div[role="dialog"] pre,
+    div[role="dialog"] span,
+    div[role="dialog"] kbd,
     div[data-testid="stModal"] code,
     div[data-testid="stModal"] pre,
+    div[data-testid="stModal"] span,
+    div[data-testid="stModal"] kbd,
     div[data-baseweb="modal"] code,
-    div[data-baseweb="modal"] pre {
+    div[data-baseweb="modal"] pre,
+    div[data-baseweb="modal"] span,
+    div[data-baseweb="modal"] kbd,
+    div[data-baseweb="popover"] code,
+    div[data-baseweb="popover"] pre,
+    div[data-baseweb="popover"] span,
+    div[data-baseweb="popover"] kbd {
         background: var(--app-soft) !important;
         color: var(--app-text) !important;
+    }
+
+    div[role="dialog"] code,
+    div[role="dialog"] pre,
+    div[role="dialog"] kbd,
+    div[data-testid="stModal"] code,
+    div[data-testid="stModal"] pre,
+    div[data-testid="stModal"] kbd,
+    div[data-baseweb="modal"] code,
+    div[data-baseweb="modal"] pre,
+    div[data-baseweb="modal"] kbd,
+    div[data-baseweb="popover"] code,
+    div[data-baseweb="popover"] pre,
+    div[data-baseweb="popover"] kbd {
         border: 1px solid var(--app-border) !important;
+        border-radius: 4px !important;
+        padding: 0.08rem 0.25rem !important;
     }
 
     .chat-form {
