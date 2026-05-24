@@ -15,7 +15,7 @@ except ImportError:
     genai = None
 
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.11"
+APP_VERSION = "V1.12"
 CLIENT_STATE_PARAM = "client_state"
 
 
@@ -193,6 +193,29 @@ st.markdown("""
         padding: 2.25rem 3rem 3rem;
     }
 
+    @keyframes app-soft-enter {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div,
+    .main .block-container > div,
+    .section-title,
+    div[data-testid="stPlotlyChart"],
+    div[data-testid="stDataFrame"],
+    div[data-testid="stTable"],
+    div[data-testid="stForm"],
+    div[data-testid="stMetric"],
+    div[data-testid="stAlert"] {
+        animation: app-soft-enter 360ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+    }
+
     #MainMenu,
     footer,
     div[data-testid="stToolbar"],
@@ -217,12 +240,21 @@ st.markdown("""
     }
 
     body.app-sidebar-collapsed section[data-testid="stSidebar"] {
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
         transform: translateX(-110%) !important;
         opacity: 0 !important;
         visibility: hidden !important;
         pointer-events: none !important;
         border-right: 0 !important;
         overflow: hidden !important;
+        clip-path: inset(0 100% 0 0) !important;
+    }
+
+    body.app-sidebar-collapsed section[data-testid="stSidebar"] * {
+        opacity: 0 !important;
+        visibility: hidden !important;
     }
 
     body.app-sidebar-collapsed div[data-testid="stSidebarCollapsedControl"],
@@ -237,7 +269,7 @@ st.markdown("""
     .sidebar-hover-zone {
         position: fixed;
         inset: 0 auto 0 0;
-        width: 88px;
+        width: 104px;
         z-index: 999999;
         background: transparent;
         pointer-events: auto;
@@ -600,12 +632,20 @@ st.markdown("""
         .side-nav a,
         .reset-link,
         .section-title h2,
+        section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div,
+        .main .block-container > div,
+        .section-title,
         div[data-testid="stPlotlyChart"],
+        div[data-testid="stDataFrame"],
+        div[data-testid="stTable"],
         div[data-testid="stForm"],
+        div[data-testid="stMetric"],
+        div[data-testid="stAlert"],
         div[data-baseweb="select"] > div,
         div[data-baseweb="input"] > div,
         button {
             transition: none !important;
+            animation: none !important;
         }
 
         .side-brand:hover,
@@ -2118,23 +2158,22 @@ components.html(
             timer = win.setTimeout(syncPlotTheme, 120);
         };
 
-        const findSidebarButton = () => {
-            const selectors = [
-                '[data-testid="stSidebarCollapsedControl"] button',
-                'button[data-testid="stSidebarCollapsedControl"]',
-                '[data-testid="collapsedControl"] button',
-                'button[data-testid="collapsedControl"]',
-                '[data-testid="stSidebarCollapseButton"] button',
-                'button[data-testid="stSidebarCollapseButton"]',
-                'button[kind="headerNoPadding"]',
-                'button[data-testid="stBaseButton-headerNoPadding"]',
-                'button[data-testid="baseButton-headerNoPadding"]'
-            ];
+        const findButton = (selectors) => {
             for (const selector of selectors) {
                 const button = doc.querySelector(selector);
                 if (button) return button;
             }
             return null;
+        };
+
+        const findCollapsedSidebarButton = () => {
+            const selectors = [
+                '[data-testid="stSidebarCollapsedControl"] button',
+                'button[data-testid="stSidebarCollapsedControl"]',
+                '[data-testid="collapsedControl"] button',
+                'button[data-testid="collapsedControl"]'
+            ];
+            return findButton(selectors);
         };
 
         const isElementVisible = (element) => {
@@ -2144,18 +2183,48 @@ components.html(
             return rect.width > 0 && rect.height > 0 && styles.display !== "none" && styles.visibility !== "hidden";
         };
 
-        const syncSidebarState = () => {
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+        const sidebarStateKey = "dashboardSidebarCollapsed";
+        let sidebarCollapsed = win.localStorage.getItem(sidebarStateKey) === "1";
+        let openingSidebarUntil = 0;
+
+        const setSidebarCollapsed = (collapsed, persist = true) => {
+            sidebarCollapsed = Boolean(collapsed);
+            doc.body.classList.toggle("app-sidebar-collapsed", sidebarCollapsed);
+            if (persist) {
+                win.localStorage.setItem(sidebarStateKey, sidebarCollapsed ? "1" : "0");
+            }
+        };
+
+        const detectNativeSidebarCollapsed = () => {
             const collapsedControl = doc.querySelector('[data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"]');
-            const sidebarWidth = sidebar ? sidebar.getBoundingClientRect().width : 0;
-            const collapsed = (sidebar && sidebarWidth <= 96) || isElementVisible(collapsedControl);
-            doc.body.classList.toggle("app-sidebar-collapsed", Boolean(collapsed));
+            return isElementVisible(collapsedControl);
+        };
+
+        const syncSidebarState = () => {
+            if (Date.now() < openingSidebarUntil) {
+                doc.body.classList.remove("app-sidebar-collapsed");
+                return;
+            }
+            if (sidebarCollapsed) {
+                doc.body.classList.add("app-sidebar-collapsed");
+                return;
+            }
+            if (detectNativeSidebarCollapsed()) {
+                setSidebarCollapsed(true, true);
+                return;
+            }
+            doc.body.classList.remove("app-sidebar-collapsed");
         };
 
         const openSidebarFromEdge = () => {
-            if (!doc.body.classList.contains("app-sidebar-collapsed")) return;
-            const button = findSidebarButton();
-            if (button) button.click();
+            if (!sidebarCollapsed && !doc.body.classList.contains("app-sidebar-collapsed")) return;
+            openingSidebarUntil = Date.now() + 1200;
+            setSidebarCollapsed(false, true);
+            const button = findCollapsedSidebarButton();
+            if (button) {
+                win.setTimeout(() => button.click(), 20);
+            }
+            win.setTimeout(syncSidebarState, 180);
         };
 
         const ensureSidebarHoverZone = () => {
@@ -2200,6 +2269,12 @@ components.html(
             markAiSendPosition(event);
             if (event.target.closest(".reset-link")) {
                 win.localStorage.removeItem(stateKey);
+            }
+            const collapseButton = event.target.closest(
+                '[data-testid="stSidebarCollapseButton"] button, button[data-testid="stSidebarCollapseButton"], button[kind="headerNoPadding"], button[data-testid="stBaseButton-headerNoPadding"], button[data-testid="baseButton-headerNoPadding"]'
+            );
+            if (collapseButton && !doc.body.classList.contains("app-sidebar-collapsed")) {
+                win.setTimeout(() => setSidebarCollapsed(true, true), 80);
             }
         }, true);
 
