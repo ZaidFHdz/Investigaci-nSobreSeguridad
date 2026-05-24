@@ -720,6 +720,14 @@ st.markdown(
         caret-color: var(--app-text) !important;
     }}
 
+    div[data-testid="stTextInput"] input:focus,
+    div[data-testid="stTextInput"] input:focus-visible,
+    div[data-testid="stTextInput"] input:invalid {{
+        border-color: var(--app-border) !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }}
+
     div[data-testid="stTextInput"] input::placeholder {{
         color: var(--app-muted) !important;
         opacity: 1 !important;
@@ -1136,14 +1144,15 @@ Redacta un análisis ejecutivo claro, sobrio y útil para un dashboard.
 
 Usa exclusivamente el contexto estadístico proporcionado.
 No inventes datos. Si una relación es débil, dilo explícitamente.
-Evita lenguaje alarmista y evita recomendaciones legales.
+Evita lenguaje alarmista, recomendaciones legales y repeticiones metodológicas.
 
 Entrega:
-1. Lectura general de los filtros seleccionados.
+1. Lectura rápida de los filtros.
 2. Hallazgos principales.
 3. Relación entre percepción, cifra negra e incidencia.
-4. Posibles interpretaciones con cautela metodológica.
-5. Preguntas o próximos cruces recomendados.
+4. Nota de datos solo si hay un problema real de disponibilidad o variación.
+
+Máximo 650 palabras. No cierres con listas largas de próximos cruces.
 
 Contexto:
 {contexto}
@@ -1156,15 +1165,23 @@ def responder_chat_ia(modelo, contexto, analisis, historial, pregunta):
     historial_txt = "\n".join(
         f"{mensaje['role']}: {mensaje['content']}"
         for mensaje in historial[-8:]
+        if mensaje.get("role") in {"user", "assistant"}
     )
 
     prompt = f"""
 Eres analista de datos públicos de seguridad en México.
-Responde en español, de forma clara y breve, usando solo el contexto del dashboard,
+Responde en español, de forma clara, breve y directa, usando solo el contexto del dashboard,
 el análisis ya generado y la conversación. El contexto incluye datos filtrados,
 cobertura por año y muestras de las tablas usadas por las gráficas; úsalo para
 responder preguntas específicas. Si el usuario pide algo que no se puede inferir
-de estos datos, dilo y sugiere qué filtro o cruce revisaría.
+de estos datos, dilo en una frase.
+
+Reglas de estilo:
+- Máximo 2 párrafos o 4 viñetas.
+- No repitas recomendaciones metodológicas salvo que el usuario las pida.
+- No cierres siempre con ideas de próximos cruces.
+- Si el usuario pide una gráfica, responde solo qué vas a visualizar y con qué variables.
+- No inventes datos ni cambies la variable solicitada.
 
 Contexto estadístico:
 {contexto}
@@ -1187,9 +1204,226 @@ def pregunta_pide_grafico(pregunta):
     claves = [
         "grafica", "gráfica", "grafico", "gráfico", "visualiza", "dibuja",
         "graficar", "grafíc", "plot", "hazlo", "muestralo", "muéstralo",
-        "tendencia", "visualización", "visualizacion"
+        "tendencia", "visualización", "visualizacion", "pastel", "pie",
+        "donut", "dona", "barras", "barra", "correlacion", "correlación",
+        "matriz", "heatmap", "histograma", "dispersión", "dispersion",
+        "ranking", "comparacion", "comparación"
     ]
     return any(clave in texto for clave in claves)
+
+
+def metrica_pedida(texto, default="Cifra_Negra"):
+    if "percep" in texto or "inseguridad" in texto:
+        return "Percepcion"
+    if "general" in texto:
+        return "Incidencia_General"
+    if "especific" in texto or "delito" in texto or "amenaza" in texto:
+        return "Incidencia_Especifica"
+    if "cifra" in texto or "denuncia" in texto or "denunci" in texto:
+        return "Cifra_Negra"
+    return default
+
+
+def etiquetas_metricas_cruce():
+    return {
+        "Percepcion": "Percepción de inseguridad (%)",
+        "Cifra_Negra": "Cifra Negra (%)",
+        "Incidencia_Especifica": "Incidencia Específica",
+        "Incidencia_General": "Incidencia General",
+    }
+
+
+def grafico_correlacion_chat(df_master, titulo="Matriz De Correlación"):
+    if df_master is None or df_master.empty:
+        return None, "No hay datos cruzados suficientes para calcular correlaciones."
+
+    metricas = list(etiquetas_metricas_cruce().keys())
+    if not hay_variacion_suficiente(df_master, metricas[:2]):
+        return None, "No hay variación suficiente para una matriz de correlación."
+
+    matriz = df_master[metricas].corr().round(3)
+    etiquetas = etiquetas_metricas_cruce()
+    matriz.index = [etiquetas[col] for col in matriz.index]
+    matriz.columns = [etiquetas[col] for col in matriz.columns]
+
+    anotaciones = []
+    for fila, nombre_fila in enumerate(matriz.index):
+        for columna, nombre_columna in enumerate(matriz.columns):
+            valor = matriz.iloc[fila, columna]
+            texto_color = (
+                "#0a0a0a"
+                if (MODO_OSCURO and valor >= 0.78) or (not MODO_OSCURO and valor >= 0.72)
+                else COLOR_TEXTO
+            )
+            if not MODO_OSCURO and valor < 0.72:
+                texto_color = "#0a0a0a"
+            anotaciones.append(
+                dict(
+                    x=nombre_columna,
+                    y=nombre_fila,
+                    text=f"{valor:.2f}",
+                    showarrow=False,
+                    font=dict(color=texto_color, size=12),
+                )
+            )
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=matriz.values,
+            x=matriz.columns,
+            y=matriz.index,
+            zmin=-1,
+            zmax=1,
+            colorscale=ESCALA_CORRELACION,
+            xgap=1,
+            ygap=1,
+            colorbar=dict(
+                tickfont=dict(color=COLOR_TEXTO),
+                title=dict(text="r", font=dict(color=COLOR_TEXTO)),
+            ),
+            hovertemplate="%{y}<br>%{x}<br>Correlación: %{z:.3f}<extra></extra>",
+        )
+    )
+    fig.update_layout(title=titulo, annotations=anotaciones)
+    aplicar_estilo_figura(fig, altura=480)
+    fig.update_layout(margin=dict(l=170, r=92, t=66, b=112))
+    fig.update_xaxes(automargin=True, tickangle=35, showgrid=False, zeroline=False)
+    fig.update_yaxes(automargin=True, autorange="reversed", showgrid=False, zeroline=False)
+    return fig, "Matriz de correlación generada con las variables cruzadas filtradas."
+
+
+def grafico_pastel_denuncias_chat(df_master, df_total, anios_seleccionados, delito_master, titulo=None):
+    promedio_cn = np.nan
+
+    if df_master is not None and not df_master.empty and "Cifra_Negra" in df_master.columns:
+        promedio_cn = df_master["Cifra_Negra"].mean()
+
+    if not np.isfinite(promedio_cn):
+        cols = [c for c in df_total.columns if c.startswith("CN_") and c.endswith("_Est")]
+        if cols:
+            df_cn = df_total.melt(
+                id_vars=["Entidad federativa"],
+                value_vars=cols,
+                var_name="Indicador",
+                value_name="Valor",
+            )
+            df_cn["Año"] = df_cn["Indicador"].str.extract(r"CN_(\d{4})").astype(int)
+            df_cn["Delito"] = df_cn["Indicador"].str.extract(r"CN_\d{4}_(.*)_Est")
+            df_cn = df_cn[df_cn["Año"].isin(anios_seleccionados)]
+            if delito_master in set(df_cn["Delito"].dropna()):
+                df_cn = df_cn[df_cn["Delito"] == delito_master]
+            promedio_cn = df_cn["Valor"].mean()
+
+    if not np.isfinite(promedio_cn):
+        return None, "No hay cifra negra suficiente para calcular la proporción de denuncias."
+
+    promedio_cn = float(np.clip(promedio_cn, 0, 100))
+    df_pie = pd.DataFrame({
+        "Estado Legal": ["No Denunciado (Cifra Negra)", "Denunciado Formalmente"],
+        "Porcentaje": [promedio_cn, 100 - promedio_cn],
+    })
+
+    fig = px.pie(
+        df_pie,
+        names="Estado Legal",
+        values="Porcentaje",
+        hole=0.42,
+        title=titulo or f"Proporción De Denuncias ({delito_master or 'Filtros Actuales'})",
+        color="Estado Legal",
+        color_discrete_map={
+            "No Denunciado (Cifra Negra)": COLOR_ACENTO,
+            "Denunciado Formalmente": COLOR_TERCIARIO,
+        },
+    )
+    fig.update_traces(textposition="inside", textinfo="label+percent")
+    aplicar_estilo_figura(fig)
+    fig.update_layout(margin=dict(l=24, r=24, t=64, b=76))
+    return fig, "Pastel generado con el promedio de cifra negra de los filtros actuales."
+
+
+def grafico_ranking_entidades_chat(df_master, texto, titulo=None):
+    if df_master is None or df_master.empty:
+        return None, "No hay datos cruzados suficientes para hacer un ranking por entidad."
+
+    metrica = metrica_pedida(texto)
+    etiquetas = etiquetas_metricas_cruce()
+    df_rank = (
+        df_master.groupby("Entidad federativa", as_index=False)[metrica]
+        .mean()
+        .sort_values(metrica, ascending=False)
+        .head(20)
+    )
+
+    if df_rank.empty or df_rank[metrica].nunique(dropna=True) < 2:
+        return None, "No hay variación suficiente para comparar entidades."
+
+    fig = px.bar(
+        df_rank,
+        x=metrica,
+        y="Entidad federativa",
+        orientation="h",
+        title=titulo or f"Ranking Por Entidad: {etiquetas[metrica]}",
+        labels={metrica: etiquetas[metrica]},
+        color="Entidad federativa",
+        color_discrete_sequence=paleta_entidades(df_rank),
+    )
+    aplicar_estilo_figura(fig, altura=max(460, 28 * len(df_rank) + 120))
+    fig.update_layout(showlegend=False, margin=dict(l=170, r=42, t=64, b=54))
+    fig.update_yaxes(autorange="reversed", automargin=True)
+    return fig, "Barras generadas con promedios por entidad para los filtros actuales."
+
+
+def grafico_histograma_chat(df_master, texto, titulo=None):
+    if df_master is None or df_master.empty:
+        return None, "No hay datos cruzados suficientes para un histograma."
+
+    metrica = metrica_pedida(texto)
+    etiquetas = etiquetas_metricas_cruce()
+    if df_master[metrica].nunique(dropna=True) < 2:
+        return None, "No hay variación suficiente para un histograma."
+
+    fig = px.histogram(
+        df_master,
+        x=metrica,
+        nbins=18,
+        title=titulo or f"Distribución: {etiquetas[metrica]}",
+        labels={metrica: etiquetas[metrica]},
+        color_discrete_sequence=[COLOR_ACENTO],
+    )
+    aplicar_estilo_figura(fig)
+    return fig, "Histograma generado con los registros cruzados filtrados."
+
+
+def grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados, titulo=None):
+    df_env = df_filtrado[
+        (df_filtrado["Seguridad"] == "Inseguro") &
+        (df_filtrado["Año"].isin(anios_seleccionados))
+    ].copy()
+
+    if df_env.empty or "ENV_Estimaciones puntuales" not in df_env.columns:
+        return None, "No hay datos ENVIPE suficientes para comparar por sexo."
+
+    df_sexo = (
+        df_env.groupby(["Año", "Sexo"], as_index=False)["ENV_Estimaciones puntuales"]
+        .mean()
+        .dropna()
+    )
+    if df_sexo.empty or df_sexo["Sexo"].nunique() < 2:
+        return None, "No hay suficientes categorías de sexo para comparar."
+
+    fig = px.line(
+        df_sexo,
+        x="Año",
+        y="ENV_Estimaciones puntuales",
+        color="Sexo",
+        markers=True,
+        title=titulo or "Comparación ENVIPE Por Sexo",
+        labels={"ENV_Estimaciones puntuales": "% de Inseguridad"},
+        color_discrete_map=PALETA_SEXO,
+    )
+    fig.update_layout(yaxis_ticksuffix="%")
+    aplicar_estilo_figura(fig)
+    return fig, "Comparación por sexo generada con ENVIPE filtrado."
 
 
 def crear_grafico_desde_pregunta(
@@ -1205,6 +1439,35 @@ def crear_grafico_desde_pregunta(
         return None, None
 
     texto = pregunta.lower()
+
+    if "correl" in texto or "matriz" in texto or "heatmap" in texto:
+        return grafico_correlacion_chat(df_master)
+
+    if "pastel" in texto or "pie" in texto or "donut" in texto or "dona" in texto or "proporcion" in texto or "proporción" in texto:
+        return grafico_pastel_denuncias_chat(
+            df_master,
+            df_total,
+            anios_seleccionados,
+            delito_master,
+        )
+
+    if "sexo" in texto and ("envipe" in texto or "percep" in texto or "inseguridad" in texto):
+        return grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados)
+
+    if "histograma" in texto or "distribución" in texto or "distribucion" in texto:
+        if "denuncia" in texto or "denunci" in texto or "pastel" in texto:
+            return grafico_pastel_denuncias_chat(
+                df_master,
+                df_total,
+                anios_seleccionados,
+                delito_master,
+            )
+        return grafico_histograma_chat(df_master, texto)
+
+    if "barra" in texto or "barras" in texto or "ranking" in texto or "top" in texto:
+        if "sexo" in texto:
+            return grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados)
+        return grafico_ranking_entidades_chat(df_master, texto)
 
     if "envipe" in texto or "percepcion" in texto or "percepción" in texto or "inseguridad" in texto:
         df_env = df_filtrado[
@@ -1366,8 +1629,8 @@ El usuario quiere una gráfica nueva. No escribas código Python ni JavaScript.
 Devuelve SOLO un JSON válido con esta forma:
 
 {{
-  "dataset": "envipe|envipe_cobertura|cifra_negra|incidencia_general|cruce360",
-  "tipo": "linea|barras|dispersion",
+  "dataset": "envipe|envipe_cobertura|sexo_envipe|cifra_negra|incidencia_general|incidencia_especifica|cruce360|correlacion|denuncias_pastel|ranking_entidades",
+  "tipo": "linea|barras|dispersion|pastel|donut|correlacion|histograma",
   "x": "Año|Entidad federativa|Incidencia_Especifica|Incidencia_General|Percepcion|Cifra_Negra",
   "y": "ENV_Estimaciones puntuales|Valor|Tasa_Incidencia|Percepcion|Cifra_Negra|Incidencia_Especifica|Incidencia_General|Con_Dato",
   "color": "Entidad federativa|Sexo|Año|ninguno",
@@ -1378,9 +1641,14 @@ Devuelve SOLO un JSON válido con esta forma:
 Reglas:
 - Usa "envipe_cobertura" si preguntan por años faltantes, disponibilidad, cobertura o si hay datos en 2012.
 - Usa "envipe" para percepción/inseguridad por año o entidad.
+- Usa "sexo_envipe" si piden comparar hombres, mujeres o sexo.
 - Usa "cifra_negra" para denuncias, no denuncia, cifra negra.
 - Usa "incidencia_general" para tasa general estatal.
+- Usa "incidencia_especifica" para incidencia por delito seleccionado.
 - Usa "cruce360" para relaciones/correlaciones entre percepción, cifra negra e incidencia.
+- Usa "correlacion" si piden matriz, correlación o heatmap.
+- Usa "denuncias_pastel" si piden pastel, dona, pie o proporción de denunciado/no denunciado.
+- Usa "ranking_entidades" si piden barras, ranking, top o comparación por entidad.
 - Si no hay suficiente claridad, elige la vista más simple que conteste la pregunta.
 
 Contexto disponible:
@@ -1410,6 +1678,39 @@ def crear_grafico_desde_spec_ia(
     titulo = spec.get("titulo") or "Gráfico Generado Por IA"
     color = spec.get("color") if spec.get("color") != "ninguno" else None
     tamano = spec.get("tamano") if spec.get("tamano") != "ninguno" else None
+
+    if dataset == "correlacion" or tipo == "correlacion":
+        return grafico_correlacion_chat(df_master, titulo)
+
+    if dataset == "denuncias_pastel" or tipo in {"pastel", "donut"}:
+        return grafico_pastel_denuncias_chat(
+            df_master,
+            df_total,
+            anios_seleccionados,
+            delito_master,
+            titulo=titulo,
+        )
+
+    if dataset == "sexo_envipe":
+        return grafico_sexo_envipe_chat(
+            df_filtrado,
+            anios_seleccionados,
+            titulo=titulo,
+        )
+
+    if dataset == "ranking_entidades":
+        return grafico_ranking_entidades_chat(
+            df_master,
+            f"{spec.get('y', '')} {spec.get('x', '')} {titulo}",
+            titulo=titulo,
+        )
+
+    if tipo == "histograma":
+        return grafico_histograma_chat(
+            df_master,
+            f"{spec.get('y', '')} {spec.get('x', '')} {titulo}",
+            titulo=titulo,
+        )
 
     if dataset in {"envipe", "envipe_cobertura"}:
         df_plot = df_filtrado[
@@ -1522,6 +1823,35 @@ def crear_grafico_desde_spec_ia(
         ajustar_legenda_larga(fig, df_plot)
         return fig, "Gráfico generado por IA con especificación validada: incidencia general."
 
+    if dataset == "incidencia_especifica":
+        if df_master is None or df_master.empty:
+            return None, "La IA pidió incidencia específica, pero no hay cruce suficiente con los filtros actuales."
+
+        if tipo == "barras":
+            return grafico_ranking_entidades_chat(df_master, "incidencia especifica", titulo=titulo)
+
+        df_plot = (
+            df_master.groupby(["Año", "Entidad federativa"], as_index=False)["Incidencia_Especifica"]
+            .mean()
+            .dropna()
+        )
+        if df_plot.empty or df_plot["Año"].nunique() < 2:
+            return None, "La IA pidió incidencia específica, pero no hay suficientes años para graficar."
+
+        fig = px.line(
+            df_plot,
+            x="Año",
+            y="Incidencia_Especifica",
+            color="Entidad federativa",
+            markers=True,
+            title=titulo,
+            labels={"Incidencia_Especifica": "Incidencia Específica"},
+            color_discrete_sequence=paleta_entidades(df_plot),
+        )
+        aplicar_estilo_figura(fig)
+        ajustar_legenda_larga(fig, df_plot)
+        return fig, "Gráfico generado por IA con especificación validada: incidencia específica."
+
     if dataset == "cruce360":
         if df_master is None or df_master.empty:
             return None, "La IA pidió el cruce 360, pero no hay intersección suficiente con los filtros actuales."
@@ -1574,6 +1904,43 @@ def mostrar_mensaje_chat(mensaje):
         st.markdown('<div class="chat-content">', unsafe_allow_html=True)
         st.markdown(mensaje["content"])
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+def mostrar_grafico_chat(mensaje, df_filtrado, df_total, df_master, anios_seleccionados, sexo_percepcion, delito_master):
+    fig = None
+    nota = mensaje.get("nota") or "Gráfico generado desde el chat."
+
+    if mensaje.get("modo") == "spec":
+        fig, nota_auto = crear_grafico_desde_spec_ia(
+            spec=mensaje.get("spec"),
+            df_filtrado=df_filtrado,
+            df_total=df_total,
+            df_master=df_master,
+            anios_seleccionados=anios_seleccionados,
+            sexo_percepcion=sexo_percepcion,
+            delito_master=delito_master,
+        )
+    else:
+        fig, nota_auto = crear_grafico_desde_pregunta(
+            pregunta=mensaje.get("pregunta", ""),
+            df_filtrado=df_filtrado,
+            df_total=df_total,
+            df_master=df_master,
+            anios_seleccionados=anios_seleccionados,
+            sexo_percepcion=sexo_percepcion,
+            delito_master=delito_master,
+        )
+
+    nota = nota or nota_auto or "Gráfico generado desde el chat."
+    if fig is None:
+        st.info(nota_auto or "No pude reconstruir esta gráfica con los filtros actuales.")
+        return
+
+    st.markdown(
+        f'<div class="generated-chart-note">{html.escape(nota)}</div>',
+        unsafe_allow_html=True
+    )
+    st.plotly_chart(fig, width="stretch", theme=None)
 
 
 @st.cache_data
@@ -2862,41 +3229,29 @@ if st.session_state.get("analisis_ia"):
     graficos_chat = st.session_state.setdefault("graficos_ia", [])
     graficos_chat_specs = st.session_state.setdefault("graficos_ia_specs", [])
 
-    if not graficos_chat and graficos_chat_specs:
+    if graficos_chat_specs and not any(mensaje.get("role") == "chart" for mensaje in historial_chat):
         for item_grafico in graficos_chat_specs:
-            fig_reconstruida = None
-            nota_reconstruida = item_grafico.get("nota")
-            if item_grafico.get("modo") == "spec":
-                fig_reconstruida, nota_auto = crear_grafico_desde_spec_ia(
-                    spec=item_grafico.get("spec"),
-                    df_filtrado=df_filtrado,
-                    df_total=df_total,
-                    df_master=df_master,
-                    anios_seleccionados=anios_seleccionados,
-                    sexo_percepcion=sexo_percepcion,
-                    delito_master=delito_master,
-                )
-                nota_reconstruida = nota_reconstruida or nota_auto
-            else:
-                fig_reconstruida, nota_auto = crear_grafico_desde_pregunta(
-                    pregunta=item_grafico.get("pregunta", ""),
-                    df_filtrado=df_filtrado,
-                    df_total=df_total,
-                    df_master=df_master,
-                    anios_seleccionados=anios_seleccionados,
-                    sexo_percepcion=sexo_percepcion,
-                    delito_master=delito_master,
-                )
-                nota_reconstruida = nota_reconstruida or nota_auto
-
-            if fig_reconstruida is not None:
-                graficos_chat.append({
-                    "nota": nota_reconstruida or "Gráfico restaurado desde el estado guardado.",
-                    "fig": fig_reconstruida,
-                })
+            historial_chat.append({
+                "role": "chart",
+                "modo": item_grafico.get("modo", "pregunta"),
+                "pregunta": item_grafico.get("pregunta", ""),
+                "spec": item_grafico.get("spec"),
+                "nota": item_grafico.get("nota") or "Gráfico restaurado desde el estado guardado.",
+            })
 
     for mensaje in historial_chat:
-        mostrar_mensaje_chat(mensaje)
+        if mensaje.get("role") == "chart":
+            mostrar_grafico_chat(
+                mensaje,
+                df_filtrado=df_filtrado,
+                df_total=df_total,
+                df_master=df_master,
+                anios_seleccionados=anios_seleccionados,
+                sexo_percepcion=sexo_percepcion,
+                delito_master=delito_master,
+            )
+        else:
+            mostrar_mensaje_chat(mensaje)
 
     pregunta_pendiente = st.session_state.get("pregunta_ia_pendiente")
     if pregunta_pendiente:
@@ -2960,7 +3315,14 @@ if st.session_state.get("analisis_ia"):
                     nota_chat = f"No pude convertir la solicitud en un gráfico válido: {error}"
 
             if fig_chat is not None:
-                graficos_chat.append({"nota": nota_chat, "fig": fig_chat})
+                mensaje_grafico = {
+                    "role": "chart",
+                    "modo": modo_grafico,
+                    "pregunta": pregunta_pendiente,
+                    "spec": spec_grafico,
+                    "nota": nota_chat,
+                }
+                historial_chat.append(mensaje_grafico)
                 graficos_chat_specs.append({
                     "modo": modo_grafico,
                     "pregunta": pregunta_pendiente,
@@ -2973,13 +3335,6 @@ if st.session_state.get("analisis_ia"):
             st.session_state.pop("pregunta_ia_pendiente", None)
             st.session_state["ai_autoscroll_ready"] = True
             st.rerun()
-
-    for grafico in graficos_chat:
-        st.markdown(
-            f'<div class="generated-chart-note">{html.escape(grafico["nota"])}</div>',
-            unsafe_allow_html=True
-        )
-        st.plotly_chart(grafico["fig"], width="stretch", theme=None)
 
     if st.session_state.pop("ai_autoscroll_ready", False):
         st.markdown('<div data-ai-autoscroll="1"></div>', unsafe_allow_html=True)
