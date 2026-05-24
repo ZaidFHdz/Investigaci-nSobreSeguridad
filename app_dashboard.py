@@ -15,7 +15,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.04"
+APP_VERSION = "V1.05"
 
 
 def cargar_estado_persistente():
@@ -71,6 +71,7 @@ if st.query_params.get("reset_dashboard") == "1":
         "chat_ia",
         "graficos_ia",
         "graficos_ia_specs",
+        "artefactos_ia_specs",
         "pregunta_ia_pendiente",
         "ai_autoscroll_ready",
         "report_autoscroll_ready",
@@ -1402,6 +1403,26 @@ def pregunta_continua_grafico(pregunta, historial):
     )
 
 
+def pregunta_pide_tabla(pregunta):
+    texto = (pregunta or "").lower()
+    claves = [
+        "tabla", "tabulado", "cuadro", "listado", "filtra", "filtrame",
+        "filtrame", "muéstrame los datos", "muestrame los datos",
+        "descargar", "exportar", "csv"
+    ]
+    return any(clave in texto for clave in claves)
+
+
+def pregunta_pide_calculo(pregunta):
+    texto = (pregunta or "").lower()
+    claves = [
+        "media", "promedio", "mediana", "máximo", "maximo", "mínimo",
+        "minimo", "suma", "total", "desviación", "desviacion", "conteo",
+        "cuenta", "calcula", "calculo", "cálculo"
+    ]
+    return any(clave in texto for clave in claves)
+
+
 def metrica_pedida(texto, default="Cifra_Negra"):
     if "percep" in texto or "inseguridad" in texto:
         return "Percepcion"
@@ -1655,6 +1676,119 @@ def grafico_relacion_cruce_chat(df_master, texto, titulo=None):
     aplicar_estilo_figura(fig)
     ajustar_legenda_larga(fig, df_master)
     return fig, "Dispersión generada con el cruce 360 filtrado."
+
+
+def construir_tabla_chat(pregunta, df_master, df_filtrado, anios_seleccionados, delito_master):
+    texto = (pregunta or "").lower()
+
+    if df_master is not None and not df_master.empty:
+        df_base = df_master.copy()
+        origen = "cruce_360"
+    else:
+        df_base = df_filtrado[df_filtrado["Año"].isin(anios_seleccionados)].copy()
+        origen = "base_filtrada"
+
+    if df_base.empty:
+        return None, "No hay datos suficientes para construir una tabla con los filtros actuales."
+
+    metricas = [col for col in etiquetas_metricas_cruce() if col in df_base.columns]
+    dimensiones = [col for col in ["Entidad federativa", "Año", "Delito", "Sexo", "Seguridad"] if col in df_base.columns]
+
+    if "entidad" in texto or "estado" in texto or "estados" in texto:
+        grupo = ["Entidad federativa"]
+    elif "año" in texto or "anio" in texto or "años" in texto:
+        grupo = ["Año"]
+    elif "delito" in texto and "Delito" in df_base.columns:
+        grupo = ["Delito"]
+    else:
+        grupo = ["Entidad federativa", "Año"] if {"Entidad federativa", "Año"}.issubset(df_base.columns) else dimensiones[:2]
+
+    if not metricas:
+        columnas = dimensiones + [
+            col for col in df_base.select_dtypes(include="number").columns
+            if col not in {"Año"}
+        ][:6]
+        tabla = df_base[columnas].head(200).copy()
+    else:
+        tabla = (
+            df_base.groupby(grupo, as_index=False)[metricas]
+            .mean()
+            .round(3)
+            .sort_values(grupo)
+        )
+
+    if "top" in texto or "mayor" in texto or "alt" in texto:
+        metrica = metrica_pedida(texto, default=metricas[0] if metricas else None)
+        if metrica in tabla.columns:
+            tabla = tabla.sort_values(metrica, ascending=False)
+    elif "menor" in texto or "baj" in texto:
+        metrica = metrica_pedida(texto, default=metricas[0] if metricas else None)
+        if metrica in tabla.columns:
+            tabla = tabla.sort_values(metrica, ascending=True)
+
+    if "2020" in texto and "Año" in tabla.columns:
+        tabla = tabla[tabla["Año"] == 2020]
+
+    tabla = tabla.head(200)
+    nota = (
+        f"Tabla generada con {len(tabla):,} filas desde {origen}"
+        f"{f' para {delito_master}' if delito_master else ''}."
+    )
+    return tabla, nota
+
+
+def construir_calculo_chat(pregunta, df_master, df_filtrado, anios_seleccionados):
+    texto = (pregunta or "").lower()
+
+    if df_master is not None and not df_master.empty:
+        df_base = df_master.copy()
+    else:
+        df_base = df_filtrado[df_filtrado["Año"].isin(anios_seleccionados)].copy()
+
+    if df_base.empty:
+        return None, "No hay datos suficientes para calcular con los filtros actuales."
+
+    metrica = metrica_pedida(texto, default="Cifra_Negra")
+    if metrica not in df_base.columns:
+        numericas = [col for col in df_base.select_dtypes(include="number").columns if col != "Año"]
+        if not numericas:
+            return None, "No encontré variables numéricas para calcular."
+        metrica = numericas[0]
+
+    serie = df_base[metrica].dropna()
+    if serie.empty:
+        return None, f"No hay valores disponibles para {metrica}."
+
+    if "mediana" in texto:
+        operacion = "Mediana"
+        valor = serie.median()
+    elif "máximo" in texto or "maximo" in texto or "mayor" in texto:
+        operacion = "Máximo"
+        valor = serie.max()
+    elif "mínimo" in texto or "minimo" in texto or "menor" in texto:
+        operacion = "Mínimo"
+        valor = serie.min()
+    elif "suma" in texto or "total" in texto:
+        operacion = "Suma"
+        valor = serie.sum()
+    elif "desviación" in texto or "desviacion" in texto:
+        operacion = "Desviación estándar"
+        valor = serie.std()
+    elif "conteo" in texto or "cuenta" in texto:
+        operacion = "Conteo"
+        valor = serie.count()
+    else:
+        operacion = "Media"
+        valor = serie.mean()
+
+    tabla = pd.DataFrame([{
+        "Cálculo": operacion,
+        "Variable": etiquetas_metricas_cruce().get(metrica, metrica),
+        "Valor": round(float(valor), 4),
+        "Observaciones usadas": int(serie.count()),
+    }])
+    nota = f"{operacion} calculada sobre {etiquetas_metricas_cruce().get(metrica, metrica)} con los filtros actuales."
+    return tabla, nota
 
 
 def crear_grafico_desde_pregunta(
@@ -2177,6 +2311,45 @@ def mostrar_grafico_chat(mensaje, df_filtrado, df_total, df_master, anios_selecc
     st.plotly_chart(fig, width="stretch", theme=None)
 
 
+def mostrar_tabla_chat(mensaje, df_master, df_filtrado, anios_seleccionados, delito_master):
+    tipo = mensaje.get("tipo", "tabla")
+    pregunta = mensaje.get("pregunta", "")
+
+    if tipo == "calculo":
+        tabla, nota = construir_calculo_chat(
+            pregunta,
+            df_master=df_master,
+            df_filtrado=df_filtrado,
+            anios_seleccionados=anios_seleccionados,
+        )
+    else:
+        tabla, nota = construir_tabla_chat(
+            pregunta,
+            df_master=df_master,
+            df_filtrado=df_filtrado,
+            anios_seleccionados=anios_seleccionados,
+            delito_master=delito_master,
+        )
+
+    nota = mensaje.get("nota") or nota
+    if tabla is None or tabla.empty:
+        st.info(nota or "No pude construir la tabla con los filtros actuales.")
+        return
+
+    st.markdown(
+        f'<div class="generated-chart-note">{html.escape(nota)}</div>',
+        unsafe_allow_html=True
+    )
+    st.dataframe(tabla, hide_index=True, use_container_width=True)
+    st.download_button(
+        "Descargar tabla CSV",
+        data=tabla.to_csv(index=False).encode("utf-8"),
+        file_name=f"consulta_ia_{tipo}.csv",
+        mime="text/csv",
+        key=f"download_{tipo}_{abs(hash(json.dumps(mensaje, sort_keys=True, default=str))) % 100000000}",
+    )
+
+
 @st.cache_data
 def cargar_datos(version_archivo):
     df = pd.read_parquet(ARCHIVO_DATOS)
@@ -2256,7 +2429,7 @@ if estados_seleccionados:
 
 df_total = df_filtrado[df_filtrado["Sexo"] == "Total"].copy()
 
-for clave_persistente in ["analisis_ia", "analisis_ia_contexto", "chat_ia", "graficos_ia_specs"]:
+for clave_persistente in ["analisis_ia", "analisis_ia_contexto", "chat_ia", "graficos_ia_specs", "artefactos_ia_specs"]:
     if clave_persistente not in st.session_state and clave_persistente in ESTADO_PERSISTENTE:
         st.session_state[clave_persistente] = ESTADO_PERSISTENTE[clave_persistente]
 
@@ -2264,6 +2437,8 @@ if "graficos_ia" not in st.session_state:
     st.session_state["graficos_ia"] = []
 if "graficos_ia_specs" not in st.session_state:
     st.session_state["graficos_ia_specs"] = []
+if "artefactos_ia_specs" not in st.session_state:
+    st.session_state["artefactos_ia_specs"] = []
 
 st.sidebar.markdown(
     """
@@ -3468,6 +3643,7 @@ if st.button("Generar análisis con IA", type="primary"):
                 st.session_state["chat_ia"] = []
                 st.session_state["graficos_ia"] = []
                 st.session_state["graficos_ia_specs"] = []
+                st.session_state["artefactos_ia_specs"] = []
                 st.session_state["report_autoscroll_ready"] = True
             except Exception as error:
                 st.session_state.pop("analisis_ia", None)
@@ -3506,6 +3682,7 @@ if st.session_state.get("analisis_ia"):
     historial_chat = st.session_state.setdefault("chat_ia", [])
     graficos_chat = st.session_state.setdefault("graficos_ia", [])
     graficos_chat_specs = st.session_state.setdefault("graficos_ia_specs", [])
+    artefactos_chat_specs = st.session_state.setdefault("artefactos_ia_specs", [])
 
     if graficos_chat_specs and not any(mensaje.get("role") == "chart" for mensaje in historial_chat):
         for item_grafico in graficos_chat_specs:
@@ -3517,6 +3694,15 @@ if st.session_state.get("analisis_ia"):
                 "nota": item_grafico.get("nota") or "Gráfico restaurado desde el estado guardado.",
             })
 
+    if artefactos_chat_specs and not any(mensaje.get("role") == "table" for mensaje in historial_chat):
+        for item_tabla in artefactos_chat_specs:
+            historial_chat.append({
+                "role": "table",
+                "tipo": item_tabla.get("tipo", "tabla"),
+                "pregunta": item_tabla.get("pregunta", ""),
+                "nota": item_tabla.get("nota"),
+            })
+
     for mensaje in historial_chat:
         if mensaje.get("role") == "chart":
             mostrar_grafico_chat(
@@ -3526,6 +3712,14 @@ if st.session_state.get("analisis_ia"):
                 df_master=df_master,
                 anios_seleccionados=anios_seleccionados,
                 sexo_percepcion=sexo_percepcion,
+                delito_master=delito_master,
+            )
+        elif mensaje.get("role") == "table":
+            mostrar_tabla_chat(
+                mensaje,
+                df_master=df_master,
+                df_filtrado=df_filtrado,
+                anios_seleccionados=anios_seleccionados,
                 delito_master=delito_master,
             )
         else:
@@ -3568,6 +3762,8 @@ if st.session_state.get("analisis_ia"):
                 respuesta_indica_grafico(respuesta_chat) or
                 pregunta_continua_grafico(pregunta_pendiente, historial_chat)
             )
+            debe_generar_tabla = pregunta_pide_tabla(pregunta_pendiente)
+            debe_generar_calculo = pregunta_pide_calculo(pregunta_pendiente)
 
             fig_chat, nota_chat = crear_grafico_desde_pregunta(
                 pregunta=pregunta_pendiente,
@@ -3623,6 +3819,40 @@ if st.session_state.get("analisis_ia"):
             elif nota_chat and debe_generar_grafico:
                 historial_chat.append({"role": "assistant", "content": nota_chat})
 
+            if debe_generar_tabla or debe_generar_calculo:
+                tipo_artefacto = "calculo" if debe_generar_calculo and not debe_generar_tabla else "tabla"
+                if tipo_artefacto == "calculo":
+                    tabla_ia, nota_tabla = construir_calculo_chat(
+                        pregunta_pendiente,
+                        df_master=df_master,
+                        df_filtrado=df_filtrado,
+                        anios_seleccionados=anios_seleccionados,
+                    )
+                else:
+                    tabla_ia, nota_tabla = construir_tabla_chat(
+                        pregunta_pendiente,
+                        df_master=df_master,
+                        df_filtrado=df_filtrado,
+                        anios_seleccionados=anios_seleccionados,
+                        delito_master=delito_master,
+                    )
+
+                if tabla_ia is not None and not tabla_ia.empty:
+                    mensaje_tabla = {
+                        "role": "table",
+                        "tipo": tipo_artefacto,
+                        "pregunta": pregunta_pendiente,
+                        "nota": nota_tabla,
+                    }
+                    historial_chat.append(mensaje_tabla)
+                    artefactos_chat_specs.append({
+                        "tipo": tipo_artefacto,
+                        "pregunta": pregunta_pendiente,
+                        "nota": nota_tabla,
+                    })
+                elif nota_tabla:
+                    historial_chat.append({"role": "assistant", "content": nota_tabla})
+
             st.session_state.pop("pregunta_ia_pendiente", None)
             st.session_state["ai_autoscroll_ready"] = True
             st.rerun()
@@ -3654,4 +3884,5 @@ guardar_estado_persistente({
     "analisis_ia_contexto": st.session_state.get("analisis_ia_contexto"),
     "chat_ia": st.session_state.get("chat_ia", []),
     "graficos_ia_specs": st.session_state.get("graficos_ia_specs", []),
+    "artefactos_ia_specs": st.session_state.get("artefactos_ia_specs", []),
 })
