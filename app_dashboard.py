@@ -1,5 +1,4 @@
 import streamlit as st
-import base64
 import html
 import json
 import numpy as np
@@ -14,39 +13,40 @@ try:
 except ImportError:
     genai = None
 
+ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.12"
-CLIENT_STATE_PARAM = "client_state"
 
 
 def cargar_estado_persistente():
-    estado_codificado = st.query_params.get(CLIENT_STATE_PARAM, "")
-    if not estado_codificado:
+    if not ESTADO_DASHBOARD.exists():
         return {}
 
     try:
-        padding = "=" * (-len(estado_codificado) % 4)
-        estado_json = base64.urlsafe_b64decode(
-            (estado_codificado + padding).encode("utf-8")
-        ).decode("utf-8")
-        estado = json.loads(estado_json)
-        return estado if isinstance(estado, dict) else {}
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return json.loads(ESTADO_DASHBOARD.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
         return {}
 
 
-def codificar_estado_cliente(estado):
-    estado_json = json.dumps(
-        estado,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        default=lambda valor: valor.item() if hasattr(valor, "item") else str(valor),
-    )
-    return base64.urlsafe_b64encode(estado_json.encode("utf-8")).decode("utf-8").rstrip("=")
+def guardar_estado_persistente(estado):
+    try:
+        ESTADO_DASHBOARD.write_text(
+            json.dumps(
+                estado,
+                ensure_ascii=False,
+                indent=2,
+                default=lambda valor: valor.item() if hasattr(valor, "item") else str(valor),
+            ),
+            encoding="utf-8"
+        )
+    except OSError:
+        pass
 
 
 def borrar_estado_persistente():
-    pass
+    try:
+        ESTADO_DASHBOARD.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 ESTADO_PERSISTENTE = cargar_estado_persistente()
@@ -63,25 +63,7 @@ if st.query_params.get("reset_dashboard") == "1":
         "anios_globales",
         "estados_globales",
         "sexo_percepcion",
-        "tab2_delito",
-        "tab3_delito",
         "tab4_delito_master",
-        "tab4_grafica1_x",
-        "tab4_grafica1_y",
-        "tab4_grafica1_tamano",
-        "tab4_grafica1_color",
-        "tab4_grafica2_metrica_a",
-        "tab4_grafica2_metrica_b",
-        "tab4_grafica3_metrica",
-        "tab4_linea_a",
-        "tab4_linea_b",
-        "tab4_metodo_corr",
-        "tab4_nivel_corr",
-        "tab4_variables_corr",
-        "tab4_eje_x",
-        "tab4_eje_y",
-        "tab4_tamano",
-        "tab4_color",
         "analisis_ia",
         "analisis_ia_contexto",
         "analisis_ia_contexto_actual",
@@ -144,76 +126,20 @@ st.markdown("""
         color: var(--app-text);
     }
 
-    .desktop-only-blocker {
-        display: none;
+    div[data-testid="stAppViewContainer"],
+    div[data-testid="stMain"],
+    .block-container {
+        transition: filter 220ms ease, opacity 220ms ease, background-color 220ms ease;
     }
 
-    body.non-desktop-device .desktop-only-blocker {
-        position: fixed;
-        inset: 0;
-        z-index: 1000000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1.5rem;
-        background: var(--app-bg);
-        color: var(--app-text);
-    }
-
-    body.non-desktop-device .desktop-only-blocker-card {
-        width: min(100%, 34rem);
-        border: 1px solid var(--app-border);
-        border-radius: 8px;
-        background: var(--app-panel);
-        padding: 1.4rem;
-    }
-
-    body.non-desktop-device .desktop-only-blocker-card strong {
-        display: block;
-        color: var(--app-text);
-        font-size: 1.4rem;
-        line-height: 1.15;
-        margin-bottom: 0.65rem;
-    }
-
-    body.non-desktop-device .desktop-only-blocker-card p {
-        margin: 0;
-        color: var(--app-muted);
-        line-height: 1.55;
-    }
-
-    body.non-desktop-device div[data-testid="stAppViewContainer"],
-    body.non-desktop-device section[data-testid="stSidebar"],
-    body.non-desktop-device header[data-testid="stHeader"] {
-        display: none !important;
+    div[data-testid="stAppViewContainer"].app-refreshing {
+        filter: blur(2px) brightness(0.82);
+        opacity: 0.82;
     }
 
     .block-container {
         max-width: 1440px;
         padding: 2.25rem 3rem 3rem;
-    }
-
-    @keyframes app-soft-enter {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div,
-    .main .block-container > div,
-    .section-title,
-    div[data-testid="stPlotlyChart"],
-    div[data-testid="stDataFrame"],
-    div[data-testid="stTable"],
-    div[data-testid="stForm"],
-    div[data-testid="stMetric"],
-    div[data-testid="stAlert"] {
-        animation: app-soft-enter 360ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
     }
 
     #MainMenu,
@@ -237,47 +163,6 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         background: var(--app-soft);
         border-right: 1px solid var(--app-border);
-    }
-
-    body.app-sidebar-collapsed section[data-testid="stSidebar"] {
-        width: 0 !important;
-        min-width: 0 !important;
-        max-width: 0 !important;
-        transform: translateX(-110%) !important;
-        opacity: 0 !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
-        border-right: 0 !important;
-        overflow: hidden !important;
-        clip-path: inset(0 100% 0 0) !important;
-    }
-
-    body.app-sidebar-collapsed section[data-testid="stSidebar"] * {
-        opacity: 0 !important;
-        visibility: hidden !important;
-    }
-
-    body.app-sidebar-collapsed div[data-testid="stSidebarCollapsedControl"],
-    body.app-sidebar-collapsed div[data-testid="collapsedControl"],
-    body.app-sidebar-collapsed button[data-testid="stSidebarCollapsedControl"],
-    body.app-sidebar-collapsed button[data-testid="collapsedControl"] {
-        opacity: 0 !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
-    }
-
-    .sidebar-hover-zone {
-        position: fixed;
-        inset: 0 auto 0 0;
-        width: 104px;
-        z-index: 999999;
-        background: transparent;
-        pointer-events: auto;
-        display: none;
-    }
-
-    body.app-sidebar-collapsed .sidebar-hover-zone {
-        display: block;
     }
 
     section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {
@@ -313,15 +198,16 @@ st.markdown("""
     div[data-testid="stSidebarCollapseButton"] button,
     div[data-testid="stSidebarCollapsedControl"] button,
     div[data-testid="collapsedControl"] button {
-        width: 2.25rem !important;
-        height: 2.25rem !important;
+        width: 2.25rem;
+        height: 2.25rem;
         border: 1px solid var(--app-border) !important;
         border-radius: 8px !important;
         background: var(--app-panel) !important;
         color: var(--app-text) !important;
         opacity: 1 !important;
-        pointer-events: auto !important;
         box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+        position: relative !important;
+        z-index: 50 !important;
     }
 
     div[data-testid="stSidebarHeader"],
@@ -329,10 +215,7 @@ st.markdown("""
     div[data-testid="stSidebarCollapsedControl"],
     div[data-testid="collapsedControl"] {
         align-items: flex-start !important;
-        min-height: 2.25rem !important;
-        height: 2.25rem !important;
         padding-top: 0.65rem !important;
-        overflow: visible !important;
     }
 
     button[data-testid="stBaseButton-headerNoPadding"] *,
@@ -395,24 +278,6 @@ st.markdown("""
         color: var(--app-muted);
     }
 
-    div[data-testid="stMarkdownContainer"] p,
-    label,
-    .app-subtitle,
-    .generated-chart-note,
-    div[data-testid="stCaptionContainer"],
-    div[data-testid="stAlert"] {
-        transition: transform 180ms ease, color 180ms ease, opacity 180ms ease;
-    }
-
-    div[data-testid="stMarkdownContainer"] p:hover,
-    label:hover,
-    .app-subtitle:hover,
-    .generated-chart-note:hover,
-    div[data-testid="stCaptionContainer"]:hover,
-    div[data-testid="stAlert"]:hover {
-        transform: translateY(-1px);
-    }
-
     div[data-baseweb="select"] > div,
     div[data-baseweb="input"] > div,
     div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
@@ -450,12 +315,6 @@ st.markdown("""
         background: var(--app-panel);
         border: 1px solid var(--app-border);
         color: var(--app-text);
-    }
-
-    div[data-baseweb="popover"]:has([aria-disabled="true"]),
-    div[data-baseweb="popover"]:has([role="option"][aria-disabled="true"]),
-    ul[role="listbox"]:has([aria-disabled="true"]) {
-        display: none !important;
     }
 
     li[role="option"],
@@ -546,7 +405,7 @@ st.markdown("""
         border-radius: 8px;
         padding: 0.55rem 0.75rem;
         background: var(--app-panel);
-        margin: 0.2rem 3.1rem 0.75rem 0;
+        margin: -2.72rem 3.25rem 0.75rem 0;
         min-height: 2.25rem;
         display: flex;
         flex-direction: column;
@@ -590,77 +449,6 @@ st.markdown("""
         background: var(--app-soft);
     }
 
-    .side-brand,
-    .sidebar-heading,
-    .side-nav a,
-    .reset-link,
-    .section-title h2,
-    div[data-testid="stPlotlyChart"],
-    div[data-testid="stForm"],
-    div[data-baseweb="select"] > div,
-    div[data-baseweb="input"] > div,
-    button {
-        transition:
-            transform 180ms ease,
-            border-color 180ms ease,
-            background-color 180ms ease,
-            opacity 180ms ease,
-            box-shadow 180ms ease;
-    }
-
-    .side-brand:hover,
-    .sidebar-heading:hover,
-    .side-nav a:hover,
-    .reset-link:hover,
-    div[data-testid="stPlotlyChart"]:hover,
-    button:hover {
-        transform: translateY(-1.5px);
-    }
-
-    .section-title:hover h2 {
-        transform: translateY(-2px);
-    }
-
-    div[data-baseweb="select"] > div:hover,
-    div[data-baseweb="input"] > div:hover {
-        transform: translateY(-1px);
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        .side-brand,
-        .sidebar-heading,
-        .side-nav a,
-        .reset-link,
-        .section-title h2,
-        section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div,
-        .main .block-container > div,
-        .section-title,
-        div[data-testid="stPlotlyChart"],
-        div[data-testid="stDataFrame"],
-        div[data-testid="stTable"],
-        div[data-testid="stForm"],
-        div[data-testid="stMetric"],
-        div[data-testid="stAlert"],
-        div[data-baseweb="select"] > div,
-        div[data-baseweb="input"] > div,
-        button {
-            transition: none !important;
-            animation: none !important;
-        }
-
-        .side-brand:hover,
-        .sidebar-heading:hover,
-        .side-nav a:hover,
-        .reset-link:hover,
-        .section-title:hover h2,
-        div[data-testid="stPlotlyChart"]:hover,
-        div[data-baseweb="select"] > div:hover,
-        div[data-baseweb="input"] > div:hover,
-        button:hover {
-            transform: none !important;
-        }
-    }
-
     .reset-link {
         display: block;
         width: 100%;
@@ -686,15 +474,6 @@ st.markdown("""
         border-top: 1px solid var(--app-border);
         margin: -0.15rem 0 0;
         padding-top: 0.55rem;
-    }
-
-    .sidebar-version {
-        border-top: 1px solid var(--app-border);
-        color: var(--app-muted);
-        font-size: 0.78rem;
-        font-weight: 700;
-        margin-top: 1.2rem;
-        padding-top: 0.75rem;
     }
 
     .sidebar-heading {
@@ -855,18 +634,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown(
-    """
-    <div class="desktop-only-blocker">
-        <div class="desktop-only-blocker-card">
-            <strong>Disponible Solo En Computadora</strong>
-            <p>Este tablero está diseñado para mouse, teclado y pantalla amplia. Para evitar problemas con filtros, gráficas y chat, ábrelo desde Windows, macOS, Linux o una computadora de escritorio/portátil.</p>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
 tema_streamlit = st.context.theme.get("type") if st.context.theme else None
 MODO_OSCURO = tema_streamlit == "dark"
 
@@ -893,46 +660,6 @@ st.markdown(
     div[data-testid="stBaseButton-secondary"] button {{
         border-color: var(--app-border) !important;
         background: var(--app-panel) !important;
-    }}
-
-    section[data-testid="stSidebar"] {{
-        min-width: 23rem !important;
-        width: 23rem !important;
-    }}
-
-    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
-        min-height: 4.25rem !important;
-        height: auto !important;
-        max-height: 15rem !important;
-        align-items: flex-start !important;
-        padding-top: 0.45rem !important;
-        padding-bottom: 0.45rem !important;
-        overflow-y: auto !important;
-        scrollbar-width: thin;
-        scrollbar-color: var(--app-muted) transparent;
-    }}
-
-    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div::-webkit-scrollbar {{
-        width: 8px;
-    }}
-
-    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div::-webkit-scrollbar-thumb {{
-        background: var(--app-muted);
-        border-radius: 999px;
-    }}
-
-    section[data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div > div:first-child {{
-        align-content: flex-start !important;
-        overflow: visible !important;
-    }}
-
-    section[data-testid="stSidebar"] [data-baseweb="tag"] {{
-        max-width: 18rem !important;
-        margin-bottom: 0.25rem !important;
-    }}
-
-    section[data-testid="stSidebar"] [data-baseweb="tag"] span {{
-        max-width: 15.5rem !important;
     }}
 
     button:hover,
@@ -1105,47 +832,6 @@ def hay_variacion_suficiente(df, columnas):
 
 def mostrar_no_disponible(mensaje):
     st.info(mensaje)
-
-
-def mostrar_nota_ceros(df, columnas, contexto="esta gráfica", umbral=0.28):
-    if df is None or df.empty:
-        return
-
-    columnas_validas = [col for col in columnas if col in df.columns]
-    if not columnas_validas:
-        return
-
-    total = 0
-    ceros = 0
-    for columna in columnas_validas:
-        serie = pd.to_numeric(df[columna], errors="coerce").dropna()
-        total += int(serie.size)
-        ceros += int((serie == 0).sum())
-
-    if total and ceros / total >= umbral:
-        st.caption(
-            f"Nota: {contexto} contiene muchos valores en 0. "
-            "Puede indicar ausencia de datos, registros no disponibles o una categoría sin observaciones para los filtros actuales."
-        )
-
-
-def restaurar_widget_desde_cliente(clave, opciones=None, default=None):
-    if clave in st.session_state:
-        return
-
-    valor = ESTADO_PERSISTENTE.get(clave, default)
-    if valor is None:
-        return
-
-    if opciones is not None:
-        if isinstance(valor, list):
-            valor = [item for item in valor if item in opciones]
-            if not valor:
-                return
-        elif valor not in opciones:
-            return
-
-    st.session_state[clave] = valor
 
 
 def aplicar_estilo_figura(fig, altura=None):
@@ -1969,6 +1655,10 @@ if estados_seleccionados:
 
 df_total = df_filtrado[df_filtrado["Sexo"] == "Total"].copy()
 
+for clave_persistente in ["analisis_ia", "analisis_ia_contexto", "chat_ia", "graficos_ia_specs"]:
+    if clave_persistente not in st.session_state and clave_persistente in ESTADO_PERSISTENTE:
+        st.session_state[clave_persistente] = ESTADO_PERSISTENTE[clave_persistente]
+
 if "graficos_ia" not in st.session_state:
     st.session_state["graficos_ia"] = []
 if "graficos_ia_specs" not in st.session_state:
@@ -2013,7 +1703,7 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 st.sidebar.markdown(
-    f"""
+    """
     <nav class="side-nav">
         <a href="#percepcion-envipe">Percepción ENVIPE</a>
         <a href="#cifra-negra">Cifra Negra</a>
@@ -2022,7 +1712,6 @@ st.sidebar.markdown(
         <a href="#analisis-ia">Análisis Con IA</a>
     </nav>
     <a class="reset-link" href="?reset_dashboard=1">Restablecer A Default</a>
-    <div class="sidebar-version">Versión {APP_VERSION}</div>
     """,
     unsafe_allow_html=True
 )
@@ -2034,35 +1723,6 @@ components.html(
         const doc = window.parent.document;
         const win = window.parent;
         const appliedThemes = new WeakMap();
-        const stateKey = "seguridadMxDashboardClientState";
-
-        const isDesktopDevice = () => {
-            const ua = win.navigator.userAgent || "";
-            const mobileLike = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua);
-            const coarsePointer = win.matchMedia("(pointer: coarse)").matches;
-            const noHover = win.matchMedia("(hover: none)").matches;
-            return !(mobileLike || (coarsePointer && noHover));
-        };
-
-        const syncDesktopGate = () => {
-            doc.body.classList.toggle("non-desktop-device", !isDesktopDevice());
-        };
-
-        const restoreClientState = () => {
-            try {
-                const url = new URL(win.location.href);
-                if (url.searchParams.has("reset_dashboard") || url.searchParams.has("client_state")) return;
-                const stored = JSON.parse(win.localStorage.getItem(stateKey) || "null");
-                if (!stored || !stored.encoded) return;
-                url.searchParams.set("client_state", stored.encoded);
-                win.location.replace(url.toString());
-            } catch (error) {
-                return;
-            }
-        };
-
-        restoreClientState();
-        syncDesktopGate();
 
         const parseRgb = (value) => {
             const match = String(value || "").match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/i);
@@ -2153,90 +1813,20 @@ components.html(
         };
 
         let timer;
+        let refreshTimer;
         const scheduleSync = () => {
             win.clearTimeout(timer);
             timer = win.setTimeout(syncPlotTheme, 120);
         };
 
-        const findButton = (selectors) => {
-            for (const selector of selectors) {
-                const button = doc.querySelector(selector);
-                if (button) return button;
-            }
-            return null;
-        };
-
-        const findCollapsedSidebarButton = () => {
-            const selectors = [
-                '[data-testid="stSidebarCollapsedControl"] button',
-                'button[data-testid="stSidebarCollapsedControl"]',
-                '[data-testid="collapsedControl"] button',
-                'button[data-testid="collapsedControl"]'
-            ];
-            return findButton(selectors);
-        };
-
-        const isElementVisible = (element) => {
-            if (!element) return false;
-            const rect = element.getBoundingClientRect();
-            const styles = win.getComputedStyle(element);
-            return rect.width > 0 && rect.height > 0 && styles.display !== "none" && styles.visibility !== "hidden";
-        };
-
-        const sidebarStateKey = "dashboardSidebarCollapsed";
-        let sidebarCollapsed = win.localStorage.getItem(sidebarStateKey) === "1";
-        let openingSidebarUntil = 0;
-
-        const setSidebarCollapsed = (collapsed, persist = true) => {
-            sidebarCollapsed = Boolean(collapsed);
-            doc.body.classList.toggle("app-sidebar-collapsed", sidebarCollapsed);
-            if (persist) {
-                win.localStorage.setItem(sidebarStateKey, sidebarCollapsed ? "1" : "0");
-            }
-        };
-
-        const detectNativeSidebarCollapsed = () => {
-            const collapsedControl = doc.querySelector('[data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"]');
-            return isElementVisible(collapsedControl);
-        };
-
-        const syncSidebarState = () => {
-            if (Date.now() < openingSidebarUntil) {
-                doc.body.classList.remove("app-sidebar-collapsed");
-                return;
-            }
-            if (sidebarCollapsed) {
-                doc.body.classList.add("app-sidebar-collapsed");
-                return;
-            }
-            if (detectNativeSidebarCollapsed()) {
-                setSidebarCollapsed(true, true);
-                return;
-            }
-            doc.body.classList.remove("app-sidebar-collapsed");
-        };
-
-        const openSidebarFromEdge = () => {
-            if (!sidebarCollapsed && !doc.body.classList.contains("app-sidebar-collapsed")) return;
-            openingSidebarUntil = Date.now() + 1200;
-            setSidebarCollapsed(false, true);
-            const button = findCollapsedSidebarButton();
-            if (button) {
-                win.setTimeout(() => button.click(), 20);
-            }
-            win.setTimeout(syncSidebarState, 180);
-        };
-
-        const ensureSidebarHoverZone = () => {
-            let zone = doc.querySelector(".sidebar-hover-zone");
-            if (!zone) {
-                zone = doc.createElement("div");
-                zone.className = "sidebar-hover-zone";
-                zone.setAttribute("aria-hidden", "true");
-                doc.body.appendChild(zone);
-                zone.addEventListener("mouseenter", openSidebarFromEdge);
-                zone.addEventListener("mousemove", openSidebarFromEdge);
-            }
+        const animateRefresh = () => {
+            const container = doc.querySelector('[data-testid="stAppViewContainer"]');
+            if (!container) return;
+            container.classList.add("app-refreshing");
+            win.clearTimeout(refreshTimer);
+            refreshTimer = win.setTimeout(() => {
+                container.classList.remove("app-refreshing");
+            }, 900);
         };
 
         const markAiSendPosition = (event) => {
@@ -2265,16 +1855,16 @@ components.html(
             }
         };
 
+        doc.addEventListener("change", (event) => {
+            if (event.target.closest('input, select, textarea, [data-baseweb="select"]')) {
+                animateRefresh();
+            }
+        }, true);
+
         doc.addEventListener("click", (event) => {
             markAiSendPosition(event);
-            if (event.target.closest(".reset-link")) {
-                win.localStorage.removeItem(stateKey);
-            }
-            const collapseButton = event.target.closest(
-                '[data-testid="stSidebarCollapseButton"] button, button[data-testid="stSidebarCollapseButton"], button[kind="headerNoPadding"], button[data-testid="stBaseButton-headerNoPadding"], button[data-testid="baseButton-headerNoPadding"]'
-            );
-            if (collapseButton && !doc.body.classList.contains("app-sidebar-collapsed")) {
-                win.setTimeout(() => setSidebarCollapsed(true, true), 80);
+            if (event.target.closest('button, [role="option"], [data-baseweb="tag"]')) {
+                animateRefresh();
             }
         }, true);
 
@@ -2289,21 +1879,7 @@ components.html(
             win.history.replaceState(null, "", `#${id}`);
         }, true);
 
-        doc.addEventListener("wheel", (event) => {
-            const multiselect = event.target.closest('div[data-testid="stMultiSelect"]');
-            if (!multiselect) return;
-            const scrollBox = multiselect.querySelector('div[data-baseweb="select"] > div');
-            if (!scrollBox || scrollBox.scrollHeight <= scrollBox.clientHeight + 2) return;
-            scrollBox.scrollTop += event.deltaY;
-            event.preventDefault();
-            event.stopPropagation();
-        }, { passive: false, capture: true });
-
         new MutationObserver(() => {
-            doc.querySelectorAll('[title="streamlitApp"]').forEach((node) => node.removeAttribute("title"));
-            syncDesktopGate();
-            syncSidebarState();
-            ensureSidebarHoverZone();
             scheduleSync();
             maybeScrollToAiResponse();
         }).observe(doc.body, {
@@ -2313,11 +1889,6 @@ components.html(
         });
 
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
-        win.matchMedia("(pointer: coarse)").addEventListener("change", syncDesktopGate);
-        win.matchMedia("(hover: none)").addEventListener("change", syncDesktopGate);
-        win.addEventListener("resize", syncSidebarState);
-        syncSidebarState();
-        ensureSidebarHoverZone();
         scheduleSync();
         maybeScrollToAiResponse();
     })();
@@ -2374,7 +1945,6 @@ if (
     aplicar_estilo_figura(fig_envipe)
     ajustar_legenda_larga(fig_envipe, df_inseguro)
     st.plotly_chart(fig_envipe, width="stretch", theme=None)
-    mostrar_nota_ceros(df_inseguro, ["ENV_Estimaciones puntuales"], "la evolución ENVIPE")
 else:
     mostrar_no_disponible("No hay suficientes años o datos de ENVIPE para dibujar la evolución.")
 
@@ -2422,7 +1992,6 @@ if not df_sexo_env.empty and "ENV_Estimaciones puntuales" in df_sexo_env.columns
     fig_sexo.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig_sexo)
     st.plotly_chart(fig_sexo, width="stretch", theme=None)
-    mostrar_nota_ceros(df_sexo_env, ["ENV_Estimaciones puntuales"], "la comparación por sexo")
 
 # --- SECCION 2: CIFRA NEGRA ---
 st.markdown("""
@@ -2459,7 +2028,6 @@ if cols_cn:
     delitos_cn = sorted(df_cn["Delito"].dropna().unique())
 
     if delitos_cn:
-        restaurar_widget_desde_cliente("tab2_delito", delitos_cn)
         delito_sel_cn = st.selectbox(
             "Clasificación del delito (Cifra Negra):",
             delitos_cn,
@@ -2484,7 +2052,6 @@ if cols_cn:
             aplicar_estilo_figura(fig_cn)
             ajustar_legenda_larga(fig_cn, df_cn_plot)
             st.plotly_chart(fig_cn, width="stretch", theme=None)
-            mostrar_nota_ceros(df_cn_plot, ["Valor"], "la tendencia de cifra negra")
         else:
             mostrar_no_disponible("No hay suficientes años o datos de cifra negra para el delito seleccionado.")
     else:
@@ -2544,7 +2111,6 @@ if "IE" in nivel_incidencia:
             aplicar_estilo_figura(fig_ie)
             ajustar_legenda_larga(fig_ie, df_ie)
             st.plotly_chart(fig_ie, width="stretch", theme=None)
-            mostrar_nota_ceros(df_ie, ["Tasa_Incidencia"], "la incidencia general")
         else:
             mostrar_no_disponible("No hay suficientes años o datos de incidencia general para los filtros seleccionados.")
     else:
@@ -2576,7 +2142,6 @@ else:
         delitos_itd = sorted(df_itd["Delito"].dropna().unique())
 
         if delitos_itd:
-            restaurar_widget_desde_cliente("tab3_delito", delitos_itd)
             delito_sel_itd = st.selectbox(
                 "Selecciona el Tipo de Delito (Incidencia):",
                 delitos_itd,
@@ -2613,7 +2178,6 @@ else:
                 aplicar_estilo_figura(fig_itd)
                 ajustar_legenda_larga(fig_itd, df_itd_plot)
                 st.plotly_chart(fig_itd, width="stretch", theme=None)
-                mostrar_nota_ceros(df_itd_plot, ["Tasa_Incidencia"], "la incidencia específica")
         else:
             mostrar_no_disponible("No se detectaron delitos de incidencia específica.")
     else:
@@ -2767,102 +2331,42 @@ if cols_ie and cols_cn and cols_itd:
         df_master = df_master.dropna()
 
         if not df_master.empty:
-            metricas_cruce = {
-                "Percepcion": "Percepción De Inseguridad (%)",
-                "Cifra_Negra": "Cifra Negra (%)",
-                "Incidencia_Especifica": "Incidencia Específica",
-                "Incidencia_General": "Incidencia General",
-            }
             st.divider()
 
             # --- GRÁFICA 1: BURBUJAS ---
-            st.markdown("### 1. Panorama Personalizable (Burbujas)")
-            opciones_burbuja = list(metricas_cruce.keys())
-            opciones_color_burbuja = ["Entidad federativa", "Año", "Delito"]
-            for clave, opciones in {
-                "tab4_grafica1_x": opciones_burbuja,
-                "tab4_grafica1_y": opciones_burbuja,
-                "tab4_grafica1_tamano": opciones_burbuja,
-                "tab4_grafica1_color": opciones_color_burbuja,
-            }.items():
-                restaurar_widget_desde_cliente(clave, opciones)
-
-            col_b1, col_b2, col_b3, col_b4 = st.columns(4)
-            with col_b1:
-                burbuja_x = st.selectbox(
-                    "Eje X:",
-                    opciones_burbuja,
-                    index=2,
-                    format_func=lambda valor: metricas_cruce[valor],
-                    key="tab4_grafica1_x",
-                )
-            with col_b2:
-                burbuja_y = st.selectbox(
-                    "Eje Y:",
-                    opciones_burbuja,
-                    index=1,
-                    format_func=lambda valor: metricas_cruce[valor],
-                    key="tab4_grafica1_y",
-                )
-            with col_b3:
-                burbuja_tamano = st.selectbox(
-                    "Tamaño:",
-                    opciones_burbuja,
-                    index=0,
-                    format_func=lambda valor: metricas_cruce[valor],
-                    key="tab4_grafica1_tamano",
-                )
-            with col_b4:
-                burbuja_color = st.selectbox(
-                    "Color:",
-                    opciones_color_burbuja,
-                    key="tab4_grafica1_color",
-                )
-
+            st.markdown("### 1. El Panorama Completo (Burbujas)")
             st.caption(
-                f"Eje X: {metricas_cruce[burbuja_x]} | "
-                f"Eje Y: {metricas_cruce[burbuja_y]} | "
-                f"Tamaño: {metricas_cruce[burbuja_tamano]} | "
-                f"Color: {burbuja_color}"
+                "Eje X: Incidencia Específica | "
+                "Eje Y: Cifra Negra | "
+                "Tamaño: Percepción de Inseguridad | "
+                "Color: Entidad"
             )
 
             fig_bubble = px.scatter(
                 df_master,
-                x=burbuja_x,
-                y=burbuja_y,
-                size=burbuja_tamano,
-                color=burbuja_color,
+                x="Incidencia_Especifica",
+                y="Cifra_Negra",
+                size="Percepcion",
+                color="Entidad federativa",
                 hover_name="Entidad federativa",
                 hover_data=["Año", "Incidencia_General"],
-                title=(
-                    f"{metricas_cruce[burbuja_y]} vs {metricas_cruce[burbuja_x]} "
-                    f"- {delito_master}"
-                ),
-                labels=metricas_cruce,
-                color_discrete_sequence=(
-                    paleta_entidades(df_master)
-                    if burbuja_color == "Entidad federativa"
-                    else PALETA_NEUTRA
-                ),
+                title=f"Relación Multivariable - {delito_master}",
+                labels={
+                    "Incidencia_Especifica": "Incidencia Específica",
+                    "Cifra_Negra": "Cifra Negra (%)",
+                    "Percepcion": "Percepción De Inseguridad (%)",
+                },
+                color_discrete_sequence=paleta_entidades(df_master),
                 opacity=0.78,
                 size_max=30 if df_master["Entidad federativa"].nunique() > 3 else 40,
             )
 
-            if burbuja_y in {"Percepcion", "Cifra_Negra"}:
-                fig_bubble.update_layout(yaxis_ticksuffix="%")
-            if burbuja_x in {"Percepcion", "Cifra_Negra"}:
-                fig_bubble.update_layout(xaxis_ticksuffix="%")
+            fig_bubble.update_layout(yaxis_ticksuffix="%")
             aplicar_estilo_figura(fig_bubble)
             fig_bubble.update_traces(marker=dict(line=dict(width=0.8, color=COLOR_PANEL)))
             fig_bubble.update_layout(margin=dict(l=68, r=34, t=62, b=72))
-            if burbuja_color == "Entidad federativa":
-                ajustar_legenda_larga(fig_bubble, df_master)
+            ajustar_legenda_larga(fig_bubble, df_master)
             st.plotly_chart(fig_bubble, width="stretch", theme=None)
-            mostrar_nota_ceros(
-                df_master,
-                [burbuja_x, burbuja_y, burbuja_tamano],
-                "el panorama personalizable"
-            )
 
             st.divider()
 
@@ -2871,55 +2375,30 @@ if cols_ie and cols_cn and cols_itd:
 
             with col1:
                 # --- GRÁFICA 2: BARRAS AGRUPADAS ---
-                st.markdown("### 2. Comparación Personalizable Por Entidad")
-                for clave in ["tab4_grafica2_metrica_a", "tab4_grafica2_metrica_b"]:
-                    restaurar_widget_desde_cliente(clave, list(metricas_cruce.keys()))
-
-                col_g2a, col_g2b = st.columns(2)
-                with col_g2a:
-                    metrica_barra_a = st.selectbox(
-                        "Métrica A:",
-                        list(metricas_cruce.keys()),
-                        index=0,
-                        format_func=lambda valor: metricas_cruce[valor],
-                        key="tab4_grafica2_metrica_a",
-                    )
-                with col_g2b:
-                    metrica_barra_b = st.selectbox(
-                        "Métrica B:",
-                        list(metricas_cruce.keys()),
-                        index=1,
-                        format_func=lambda valor: metricas_cruce[valor],
-                        key="tab4_grafica2_metrica_b",
-                    )
+                st.markdown("### 2. Percepción vs Cifra Negra")
 
                 df_barras = df_master.groupby("Entidad federativa")[
-                    [metrica_barra_a, metrica_barra_b]
+                    ["Percepcion", "Cifra_Negra"]
                 ].mean().reset_index()
 
                 df_barras_melt = df_barras.melt(
                     id_vars="Entidad federativa",
-                    value_vars=[metrica_barra_a, metrica_barra_b],
+                    value_vars=["Percepcion", "Cifra_Negra"],
                     var_name="Métrica",
-                    value_name="Valor"
+                    value_name="Porcentaje"
                 )
-                df_barras_melt["Métrica"] = df_barras_melt["Métrica"].map(metricas_cruce)
 
                 fig_bar = px.bar(
                     df_barras_melt,
                     x="Entidad federativa",
-                    y="Valor",
+                    y="Porcentaje",
                     color="Métrica",
                     barmode="group",
-                    title=(
-                        f"{metricas_cruce[metrica_barra_a]} vs "
-                        f"{metricas_cruce[metrica_barra_b]} ({delito_master})"
-                    ),
+                    title=f"Promedio en años seleccionados ({delito_master})",
                     color_discrete_sequence=[COLOR_ACENTO, COLOR_SECUNDARIO]
                 )
 
-                if {metrica_barra_a, metrica_barra_b}.issubset({"Percepcion", "Cifra_Negra"}):
-                    fig_bar.update_layout(yaxis_ticksuffix="%")
+                fig_bar.update_layout(yaxis_ticksuffix="%")
                 aplicar_estilo_figura(fig_bar)
                 fig_bar.update_layout(
                     margin=dict(l=58, r=26, t=62, b=90),
@@ -2933,45 +2412,22 @@ if cols_ie and cols_cn and cols_itd:
                     )
                 )
                 st.plotly_chart(fig_bar, width="stretch", theme=None)
-                mostrar_nota_ceros(
-                    df_barras,
-                    [metrica_barra_a, metrica_barra_b],
-                    "la comparación por entidad"
-                )
 
             with col2:
                 # --- GRÁFICA 3: PASTEL ---
-                st.markdown("### 3. Proporción Personalizable")
-                opciones_pastel = ["Cifra_Negra", "Percepcion"]
-                restaurar_widget_desde_cliente("tab4_grafica3_metrica", opciones_pastel)
-                metrica_pastel = st.selectbox(
-                    "Proporción basada en:",
-                    opciones_pastel,
-                    format_func=lambda valor: metricas_cruce[valor],
-                    key="tab4_grafica3_metrica",
-                )
+                st.markdown("### 3. Proporción De Denuncias")
 
-                promedio_pastel = float(np.clip(df_master[metrica_pastel].mean(), 0, 100))
-                complemento_pastel = 100 - promedio_pastel
-                etiqueta_principal = (
-                    "No Denunciado (Cifra Negra)"
-                    if metrica_pastel == "Cifra_Negra"
-                    else "Población Que Percibe Inseguridad"
-                )
-                etiqueta_complemento = (
-                    "Denunciado Formalmente"
-                    if metrica_pastel == "Cifra_Negra"
-                    else "Resto De La Población"
-                )
+                promedio_cn = df_master["Cifra_Negra"].mean()
+                promedio_denunciado = 100 - promedio_cn
 
                 df_pastel = pd.DataFrame({
                     "Estado Legal": [
-                        etiqueta_principal,
-                        etiqueta_complemento,
+                        "No Denunciado (Cifra Negra)",
+                        "Denunciado Formalmente"
                     ],
                     "Porcentaje": [
-                        promedio_pastel,
-                        complemento_pastel,
+                        promedio_cn,
+                        promedio_denunciado
                     ]
                 })
 
@@ -2979,12 +2435,12 @@ if cols_ie and cols_cn and cols_itd:
                     df_pastel,
                     names="Estado Legal",
                     values="Porcentaje",
-                    title=f"{metricas_cruce[metrica_pastel]} Promedio ({delito_master})",
+                    title=f"Distribución General Nacional ({delito_master})",
                     hole=0.4,
                     color="Estado Legal",
                     color_discrete_map={
-                        etiqueta_principal: COLOR_ACENTO,
-                        etiqueta_complemento: COLOR_TERCIARIO,
+                        "No Denunciado (Cifra Negra)": COLOR_ACENTO,
+                        "Denunciado Formalmente": COLOR_TERCIARIO
                     }
                 )
 
@@ -3007,42 +2463,17 @@ if cols_ie and cols_cn and cols_itd:
                     )
                 )
                 st.plotly_chart(fig_pie, width="stretch", theme=None)
-                mostrar_nota_ceros(
-                    df_master,
-                    [metrica_pastel],
-                    "la proporción personalizable"
-                )
 
             st.divider()
 
             # --- GRÁFICA 4: LÍNEAS DE TENDENCIA COMPARATIVA ---
-            st.markdown("### 4. Tendencias Personalizables")
-            for clave in ["tab4_linea_a", "tab4_linea_b"]:
-                restaurar_widget_desde_cliente(clave, list(metricas_cruce.keys()))
-
-            col_l1, col_l2 = st.columns(2)
-            with col_l1:
-                linea_a = st.selectbox(
-                    "Línea izquierda:",
-                    list(metricas_cruce.keys()),
-                    index=1,
-                    format_func=lambda valor: metricas_cruce[valor],
-                    key="tab4_linea_a",
-                )
-            with col_l2:
-                linea_b = st.selectbox(
-                    "Línea derecha:",
-                    list(metricas_cruce.keys()),
-                    index=2,
-                    format_func=lambda valor: metricas_cruce[valor],
-                    key="tab4_linea_b",
-                )
+            st.markdown("### 4. Líneas De Tendencia: Cifra Negra vs Incidencia Específica")
 
             df_lineas = df_master.groupby("Año")[
-                [linea_a, linea_b]
+                ["Cifra_Negra", "Incidencia_Especifica"]
             ].mean().reset_index()
 
-            if df_lineas["Año"].nunique() < 2 or not hay_variacion_suficiente(df_lineas, [linea_a]):
+            if df_lineas["Año"].nunique() < 2 or not hay_variacion_suficiente(df_lineas, ["Cifra_Negra"]):
                 mostrar_no_disponible("No hay suficientes años o variación para dibujar las líneas de tendencia.")
                 st.divider()
             else:
@@ -3050,8 +2481,8 @@ if cols_ie and cols_cn and cols_itd:
 
                 fig_lines.add_trace(go.Scatter(
                     x=df_lineas["Año"],
-                    y=df_lineas[linea_a],
-                    name=metricas_cruce[linea_a],
+                    y=df_lineas["Cifra_Negra"],
+                    name="Cifra Negra (%)",
                     mode="lines+markers",
                     yaxis="y1",
                     line=dict(color=COLOR_ACENTO, width=3)
@@ -3059,32 +2490,28 @@ if cols_ie and cols_cn and cols_itd:
 
                 fig_lines.add_trace(go.Scatter(
                     x=df_lineas["Año"],
-                    y=df_lineas[linea_b],
-                    name=metricas_cruce[linea_b],
+                    y=df_lineas["Incidencia_Especifica"],
+                    name="Incidencia Específica (Tasa)",
                     mode="lines+markers",
                     yaxis="y2",
                     line=dict(color=COLOR_SECUNDARIO, width=3)
                 ))
 
                 fig_lines.update_layout(
-                    title=(
-                        f"{metricas_cruce[linea_a]} vs {metricas_cruce[linea_b]} "
-                        f"({delito_master})"
-                    ),
+                    title=f"Evolución Promedio: {delito_master} (Estados Seleccionados)",
                     yaxis=dict(
                         title=dict(
-                            text=metricas_cruce[linea_a],
+                            text="Cifra Negra (%)",
                             font=dict(color=COLOR_ACENTO)
                         ),
-                        ticksuffix="%" if linea_a in {"Percepcion", "Cifra_Negra"} else "",
+                        ticksuffix="%",
                         tickfont=dict(color=COLOR_ACENTO)
                     ),
                     yaxis2=dict(
                         title=dict(
-                            text=metricas_cruce[linea_b],
+                            text="Tasa",
                             font=dict(color=COLOR_SECUNDARIO)
                         ),
-                        ticksuffix="%" if linea_b in {"Percepcion", "Cifra_Negra"} else "",
                         tickfont=dict(color=COLOR_SECUNDARIO),
                         overlaying="y",
                         side="right"
@@ -3106,16 +2533,11 @@ if cols_ie and cols_cn and cols_itd:
                     )
                 )
                 st.plotly_chart(fig_lines, width="stretch", theme=None)
-                mostrar_nota_ceros(
-                    df_lineas,
-                    [linea_a, linea_b],
-                    "las tendencias personalizables"
-                )
 
                 st.divider()
 
             # --- GRÁFICA 5: CORRELACIONES CONFIGURABLES ---
-            st.markdown("### 5. Matriz De Correlación Personalizable")
+            st.markdown("### 5. Correlaciones Configurables")
 
             metricas_correlacion = {
                 "Percepcion": "Percepción de inseguridad (%)",
@@ -3125,9 +2547,6 @@ if cols_ie and cols_cn and cols_itd:
             }
 
             col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
-            restaurar_widget_desde_cliente("tab4_metodo_corr", ["pearson", "spearman"])
-            restaurar_widget_desde_cliente("tab4_nivel_corr", ["Entidad-año", "Promedio por entidad"])
-            restaurar_widget_desde_cliente("tab4_variables_corr", list(metricas_correlacion.keys()))
 
             with col_ctrl1:
                 metodo_corr = st.selectbox(
@@ -3230,24 +2649,15 @@ if cols_ie and cols_cn and cols_itd:
                     zeroline=False,
                 )
                 st.plotly_chart(fig_corr, width="stretch", theme=None)
-                mostrar_nota_ceros(
-                    df_corr_base,
-                    variables_corr,
-                    "la matriz de correlación"
-                )
 
                 mostrar_tabla_correlacion(matriz_corr)
             else:
                 st.info("Selecciona al menos dos variables para calcular la matriz.")
 
-            st.markdown("### 6. Dispersión Personalizable")
+            st.markdown("### 6. Dispersión A La Medida")
 
             col_scatter1, col_scatter2, col_scatter3, col_scatter4 = st.columns(4)
             variables_disponibles = list(metricas_correlacion.keys())
-            restaurar_widget_desde_cliente("tab4_eje_x", variables_disponibles)
-            restaurar_widget_desde_cliente("tab4_eje_y", variables_disponibles)
-            restaurar_widget_desde_cliente("tab4_tamano", ["Ninguno"] + variables_disponibles)
-            restaurar_widget_desde_cliente("tab4_color", opciones_color)
 
             with col_scatter1:
                 eje_x = st.selectbox(
@@ -3348,14 +2758,6 @@ if cols_ie and cols_cn and cols_itd:
                 if color_por == "Entidad federativa":
                     ajustar_legenda_larga(fig_scatter_corr, df_scatter)
                 st.plotly_chart(fig_scatter_corr, width="stretch", theme=None)
-                columnas_ceros_scatter = [eje_x, eje_y]
-                if tamano != "Ninguno":
-                    columnas_ceros_scatter.append(tamano)
-                mostrar_nota_ceros(
-                    df_scatter,
-                    columnas_ceros_scatter,
-                    "la dispersión personalizable"
-                )
             else:
                 mostrar_no_disponible("No hay variación suficiente para calcular esta correlación.")
 
@@ -3597,57 +2999,13 @@ if st.session_state.get("analisis_ia"):
         st.session_state["pregunta_ia_pendiente"] = pregunta_ia
         st.rerun()
 
-estado_cliente_actual = {
+guardar_estado_persistente({
     "anios_globales": list(st.session_state.get("anios_globales", anios_seleccionados)),
     "estados_globales": list(st.session_state.get("estados_globales", estados_seleccionados)),
     "sexo_percepcion": st.session_state.get("sexo_percepcion", sexo_percepcion),
-    "tab2_delito": st.session_state.get("tab2_delito"),
-    "tab3_delito": st.session_state.get("tab3_delito"),
     "tab4_delito_master": st.session_state.get("tab4_delito_master", delito_master),
-    "tab4_grafica1_x": st.session_state.get("tab4_grafica1_x"),
-    "tab4_grafica1_y": st.session_state.get("tab4_grafica1_y"),
-    "tab4_grafica1_tamano": st.session_state.get("tab4_grafica1_tamano"),
-    "tab4_grafica1_color": st.session_state.get("tab4_grafica1_color"),
-    "tab4_grafica2_metrica_a": st.session_state.get("tab4_grafica2_metrica_a"),
-    "tab4_grafica2_metrica_b": st.session_state.get("tab4_grafica2_metrica_b"),
-    "tab4_grafica3_metrica": st.session_state.get("tab4_grafica3_metrica"),
-    "tab4_linea_a": st.session_state.get("tab4_linea_a"),
-    "tab4_linea_b": st.session_state.get("tab4_linea_b"),
-    "tab4_metodo_corr": st.session_state.get("tab4_metodo_corr"),
-    "tab4_nivel_corr": st.session_state.get("tab4_nivel_corr"),
-    "tab4_variables_corr": st.session_state.get("tab4_variables_corr"),
-    "tab4_eje_x": st.session_state.get("tab4_eje_x"),
-    "tab4_eje_y": st.session_state.get("tab4_eje_y"),
-    "tab4_tamano": st.session_state.get("tab4_tamano"),
-    "tab4_color": st.session_state.get("tab4_color"),
-}
-estado_cliente_actual = {
-    clave: valor
-    for clave, valor in estado_cliente_actual.items()
-    if valor is not None
-}
-estado_cliente_codificado = codificar_estado_cliente(estado_cliente_actual)
-
-components.html(
-    f"""
-    <script>
-    (() => {{
-        const win = window.parent;
-        const key = "seguridadMxDashboardClientState";
-        const encoded = {json.dumps(estado_cliente_codificado)};
-        const state = {json.dumps(estado_cliente_actual, ensure_ascii=False, default=str)};
-        try {{
-            win.localStorage.setItem(key, JSON.stringify({{ encoded, state, updatedAt: Date.now() }}));
-            const url = new URL(win.location.href);
-            if (url.searchParams.get("client_state") !== encoded && !url.searchParams.has("reset_dashboard")) {{
-                url.searchParams.set("client_state", encoded);
-                win.history.replaceState(null, "", url.toString());
-            }}
-        }} catch (error) {{
-            return;
-        }}
-    }})();
-    </script>
-    """,
-    height=0,
-)
+    "analisis_ia": st.session_state.get("analisis_ia"),
+    "analisis_ia_contexto": st.session_state.get("analisis_ia_contexto"),
+    "chat_ia": st.session_state.get("chat_ia", []),
+    "graficos_ia_specs": st.session_state.get("graficos_ia_specs", []),
+})
