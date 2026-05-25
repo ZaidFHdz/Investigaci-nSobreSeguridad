@@ -302,6 +302,18 @@ st.markdown("""
         border-radius: 8px;
     }
 
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:hover,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within,
+    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div,
+    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:hover,
+    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:focus-within {
+        border-color: var(--app-border) !important;
+        box-shadow: none !important;
+        outline: none !important;
+        background: var(--app-panel) !important;
+    }
+
     div[data-baseweb="select"] *,
     div[data-baseweb="input"] *,
     div[data-testid="stRadio"] *,
@@ -662,8 +674,8 @@ st.markdown("""
         position: fixed;
         left: 0;
         top: 0;
-        width: 72px;
-        height: 92px;
+        width: 136px;
+        height: 136px;
         z-index: 999998;
         pointer-events: auto;
         background: transparent;
@@ -823,6 +835,21 @@ st.markdown(
         color: var(--app-text) !important;
         border-color: var(--app-border) !important;
         caret-color: var(--app-text) !important;
+    }}
+
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:hover,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within,
+    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div,
+    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:hover,
+    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:focus-within,
+    .chat-form div[data-baseweb="input"] > div,
+    .chat-form div[data-baseweb="input"] > div:hover,
+    .chat-form div[data-baseweb="input"] > div:focus-within {{
+        border-color: var(--app-border) !important;
+        box-shadow: none !important;
+        outline: none !important;
+        background: var(--app-panel) !important;
     }}
 
     div[data-testid="stTextInput"] input::placeholder {{
@@ -1041,6 +1068,32 @@ def aviso_calidad_datos(df, columnas=None):
 def mostrar_aviso_datos(mensaje):
     if mensaje:
         st.markdown(f'<div class="data-warning">{html.escape(mensaje)}</div>', unsafe_allow_html=True)
+
+
+def aviso_cobertura_envipe(df, anios_seleccionados, columna="ENV_Estimaciones puntuales"):
+    if df is None or df.empty or columna not in df.columns:
+        return None
+
+    detalles = []
+    for anio in sorted(anios_seleccionados):
+        serie = df.loc[df["Año"] == anio, columna]
+        con_dato = serie.notna().sum()
+        ceros = (serie.fillna(0) == 0).sum()
+        if con_dato == 0:
+            detalles.append(f"{anio} sin valores ENVIPE")
+        elif ceros == len(serie) and len(serie) > 0:
+            detalles.append(f"{anio} con todos los valores en 0")
+        elif len(serie) > 0 and ceros / len(serie) >= 0.5:
+            detalles.append(f"{anio} con muchos valores en 0")
+
+    if not detalles:
+        return None
+
+    return (
+        "Aviso de cobertura ENVIPE: " +
+        "; ".join(detalles) +
+        ". Esto puede deberse a que el archivo no trae datos útiles para esos años o a que el indicador quedó en cero en la fuente."
+    )
 
 
 def preparar_descarga_tabla(df):
@@ -2584,22 +2637,48 @@ components.html(
             }
         };
 
-        const isSidebarCollapsed = () => {
-            return !!doc.querySelector(
-                'button[data-testid="stSidebarCollapsedControl"], ' +
-                'button[data-testid="collapsedControl"], ' +
-                'div[data-testid="stSidebarCollapsedControl"] button, ' +
-                'div[data-testid="collapsedControl"] button'
-            );
+        const findSidebarOpenButton = () => {
+            const explicit = [
+                'button[data-testid="stSidebarCollapsedControl"]',
+                'button[data-testid="collapsedControl"]',
+                'div[data-testid="stSidebarCollapsedControl"] button',
+                'div[data-testid="collapsedControl"] button',
+                'button[aria-label*="sidebar" i]',
+                'button[aria-label*="barra" i]',
+                'button[title*="sidebar" i]',
+                'button[title*="barra" i]'
+            ];
+            for (const selector of explicit) {
+                const button = doc.querySelector(selector);
+                if (button) return button;
+            }
+
+            const buttons = Array.from(doc.querySelectorAll("button"));
+            return buttons.find((button) => {
+                const owner = button.closest("[data-testid]");
+                const testid = `${button.dataset.testid || ""} ${owner?.dataset.testid || ""}`.toLowerCase();
+                const label = `${button.getAttribute("aria-label") || ""} ${button.title || ""} ${button.innerText || ""}`.toLowerCase();
+                const rect = button.getBoundingClientRect();
+                const nearCorner = rect.left >= -8 && rect.left < 130 && rect.top >= -8 && rect.top < 130;
+                const looksLikeSidebar = testid.includes("sidebar") || testid.includes("collapsed") ||
+                    label.includes("sidebar") || label.includes("barra") || label.includes("menu");
+                const smallHeaderButton = nearCorner && rect.width <= 64 && rect.height <= 64;
+                return nearCorner && (looksLikeSidebar || smallHeaderButton);
+            });
         };
 
+        const isSidebarCollapsed = () => {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            const width = sidebar ? sidebar.getBoundingClientRect().width : 0;
+            return width < 120 || !!findSidebarOpenButton();
+        };
+
+        let lastSidebarOpenAttempt = 0;
         const openSidebarFromHotCorner = () => {
-            const button = doc.querySelector(
-                'button[data-testid="stSidebarCollapsedControl"], ' +
-                'button[data-testid="collapsedControl"], ' +
-                'div[data-testid="stSidebarCollapsedControl"] button, ' +
-                'div[data-testid="collapsedControl"] button'
-            );
+            const now = Date.now();
+            if (now - lastSidebarOpenAttempt < 700) return;
+            lastSidebarOpenAttempt = now;
+            const button = findSidebarOpenButton();
             if (button) button.click();
         };
 
@@ -2614,6 +2693,18 @@ components.html(
                 if (isSidebarCollapsed()) openSidebarFromHotCorner();
             });
         };
+
+        doc.addEventListener("mousemove", (event) => {
+            if (event.clientX <= 22 && event.clientY <= 118 && isSidebarCollapsed()) {
+                openSidebarFromHotCorner();
+            }
+        }, true);
+
+        doc.addEventListener("click", (event) => {
+            if (event.clientX <= 72 && event.clientY <= 136 && isSidebarCollapsed()) {
+                openSidebarFromHotCorner();
+            }
+        }, true);
 
         doc.addEventListener("change", (event) => {
             if (event.target.closest('input, select, textarea, [data-baseweb="select"]')) {
@@ -2686,6 +2777,8 @@ df_inseguro = df_filtrado[
     (df_filtrado["Sexo"] == sexo_percepcion) &
     (df_filtrado["Año"].isin(anios_seleccionados))
 ]
+
+mostrar_aviso_datos(aviso_cobertura_envipe(df_inseguro, anios_seleccionados))
 
 if (
     not df_inseguro.empty and
