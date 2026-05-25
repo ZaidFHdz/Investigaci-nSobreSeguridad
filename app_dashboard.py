@@ -390,13 +390,19 @@ st.markdown("""
     }
 
     div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
-        min-height: 2.65rem;
-        align-items: flex-start;
-        overflow: visible;
+        min-height: 3rem;
+        max-height: 12.8rem;
+        align-items: flex-start !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        padding-right: 4.1rem !important;
+        scrollbar-width: thin;
     }
 
     div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
-        max-width: calc(100% - 1.8rem);
+        max-width: calc(100% - 0.75rem);
+        margin: 0.22rem 0.18rem !important;
+        white-space: nowrap !important;
     }
 
     div[data-testid="stMultiSelect"] svg {
@@ -404,7 +410,21 @@ st.markdown("""
     }
 
     div[data-testid="stMultiSelect"] input {
-        min-width: 7rem !important;
+        min-width: 5rem !important;
+        max-width: 100% !important;
+    }
+
+    div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div > div:last-child {
+        position: absolute !important;
+        right: 0.55rem !important;
+        top: 0.72rem !important;
+        z-index: 4 !important;
+        background: var(--app-panel) !important;
+    }
+
+    div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div > div:first-child {
+        max-width: 100% !important;
+        padding-right: 0.2rem !important;
     }
 
     div[data-testid="stPlotlyChart"] {
@@ -681,17 +701,6 @@ st.markdown("""
     .ai-data-table th:last-child,
     .ai-data-table td:last-child {
         border-right: 0;
-    }
-
-    .sidebar-hot-corner {
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 0;
-        height: 0;
-        z-index: -1;
-        pointer-events: none;
-        background: transparent;
     }
 
     div[data-testid="stPlotlyChart"] .main-svg text {
@@ -2558,8 +2567,6 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 
-st.markdown('<div class="sidebar-hot-corner" aria-hidden="true"></div>', unsafe_allow_html=True)
-
 components.html(
     """
     <script>
@@ -2732,6 +2739,26 @@ components.html(
             });
         };
 
+        const repairMultiselects = () => {
+            const panel = getVar("--app-panel", "#0f0f0f");
+            doc.querySelectorAll('div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div').forEach((box) => {
+                box.style.setProperty("max-height", "12.8rem", "important");
+                box.style.setProperty("overflow-y", "auto", "important");
+                box.style.setProperty("overflow-x", "hidden", "important");
+                box.style.setProperty("padding-right", "4.1rem", "important");
+                box.style.setProperty("align-items", "flex-start", "important");
+
+                const controls = box.lastElementChild;
+                if (controls) {
+                    controls.style.setProperty("position", "absolute", "important");
+                    controls.style.setProperty("right", "0.55rem", "important");
+                    controls.style.setProperty("top", "0.72rem", "important");
+                    controls.style.setProperty("z-index", "4", "important");
+                    controls.style.setProperty("background", panel, "important");
+                }
+            });
+        };
+
         const findSidebarOpenButton = () => {
             const explicit = [
                 'button[data-testid="stSidebarCollapsedControl"]',
@@ -2777,18 +2804,6 @@ components.html(
             if (button) button.click();
         };
 
-        const bindHotCorner = () => {
-            const hotCorner = doc.querySelector(".sidebar-hot-corner");
-            if (!hotCorner || hotCorner.dataset.bound === "1") return;
-            hotCorner.dataset.bound = "1";
-            hotCorner.addEventListener("mouseenter", () => {
-                if (isSidebarCollapsed()) openSidebarFromHotCorner();
-            });
-            hotCorner.addEventListener("click", () => {
-                if (isSidebarCollapsed()) openSidebarFromHotCorner();
-            });
-        };
-
         doc.addEventListener("mousemove", (event) => {
             if (event.clientX <= 34 && isSidebarCollapsed()) {
                 openSidebarFromHotCorner();
@@ -2805,6 +2820,7 @@ components.html(
             if (event.target.closest('input, select, textarea, [data-baseweb="select"]')) {
                 animateRefresh();
                 repairTextInputs();
+                repairMultiselects();
             }
         }, true);
 
@@ -2814,6 +2830,7 @@ components.html(
                 animateRefresh();
             }
             repairTextInputs();
+            repairMultiselects();
         }, true);
 
         doc.addEventListener("focusin", repairTextInputs, true);
@@ -2832,8 +2849,8 @@ components.html(
 
         new MutationObserver(() => {
             scheduleSync();
-            bindHotCorner();
             repairTextInputs();
+            repairMultiselects();
             maybeScrollToAiResponse();
         }).observe(doc.body, {
             attributes: true,
@@ -2842,9 +2859,10 @@ components.html(
         });
 
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
-        bindHotCorner();
         repairTextInputs();
+        repairMultiselects();
         win.setInterval(repairTextInputs, 700);
+        win.setInterval(repairMultiselects, 700);
         scheduleSync();
         maybeScrollToAiResponse();
     })();
