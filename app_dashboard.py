@@ -15,6 +15,8 @@ except ImportError:
 
 ESTADO_DASHBOARD_BASE = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
+MAX_ESTADOS_SEGUROS = 12
+MAX_ANIOS_SEGUROS = 8
 
 
 def normalizar_id_dispositivo(valor):
@@ -60,6 +62,28 @@ def borrar_estado_persistente(ruta_estado):
     except OSError:
         pass
 
+
+def seleccion_segura_guardada(valores_guardados, opciones, fallback, max_items):
+    valores = [valor for valor in (valores_guardados or []) if valor in opciones]
+    if not valores:
+        return list(fallback)
+    if len(valores) > max_items:
+        return list(fallback)
+    return valores
+
+
+def seleccion_procesable(valores, fallback, max_items):
+    valores = list(valores or [])
+    if len(valores) <= max_items:
+        return valores, None
+
+    seleccion = [valor for valor in fallback if valor in valores] or valores[:max_items]
+    mensaje = (
+        f"Modo seguro activo: seleccionaste {len(valores)} elementos, pero para evitar que la app se congele "
+        f"solo se procesan {len(seleccion)}. Usa menos filtros o entra con ?sos_dashboard=1 para limpiar el estado guardado."
+    )
+    return seleccion, mensaje
+
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Dashboard de Seguridad MX",
@@ -69,7 +93,7 @@ st.set_page_config(
 ESTADO_DASHBOARD = ruta_estado_persistente()
 ESTADO_PERSISTENTE = cargar_estado_persistente(ESTADO_DASHBOARD)
 
-if st.query_params.get("reset_dashboard") == "1":
+if st.query_params.get("reset_dashboard") == "1" or st.query_params.get("sos_dashboard") == "1":
     borrar_estado_persistente(ESTADO_DASHBOARD)
     for clave in [
         "anios_globales",
@@ -2460,10 +2484,12 @@ st.sidebar.markdown(
 anios_disponibles = sorted(df_maestro["Año"].unique().tolist())
 if "anios_globales" not in st.session_state:
     anios_guardados = ESTADO_PERSISTENTE.get("anios_globales", anios_disponibles)
-    st.session_state["anios_globales"] = [
-        anio for anio in anios_guardados
-        if anio in anios_disponibles
-    ] or anios_disponibles
+    st.session_state["anios_globales"] = seleccion_segura_guardada(
+        anios_guardados,
+        anios_disponibles,
+        anios_disponibles[-min(MAX_ANIOS_SEGUROS, len(anios_disponibles)):],
+        MAX_ANIOS_SEGUROS,
+    )
 
 anios_seleccionados = st.sidebar.multiselect(
     "Selecciona Año(s):",
@@ -2479,16 +2505,37 @@ estados_default = (
 )
 if "estados_globales" not in st.session_state:
     estados_guardados = ESTADO_PERSISTENTE.get("estados_globales", estados_default)
-    st.session_state["estados_globales"] = [
-        estado for estado in estados_guardados
-        if estado in estados_disponibles
-    ] or estados_default
+    st.session_state["estados_globales"] = seleccion_segura_guardada(
+        estados_guardados,
+        estados_disponibles,
+        estados_default,
+        MAX_ESTADOS_SEGUROS,
+    )
 
 estados_seleccionados = st.sidebar.multiselect(
     "Selecciona Estado(s):",
     estados_disponibles,
     key="estados_globales"
 )
+
+anios_procesables, aviso_anios_seguro = seleccion_procesable(
+    anios_seleccionados,
+    anios_disponibles[-min(MAX_ANIOS_SEGUROS, len(anios_disponibles)):],
+    MAX_ANIOS_SEGUROS,
+)
+estados_procesables, aviso_estados_seguro = seleccion_procesable(
+    estados_seleccionados,
+    estados_default,
+    MAX_ESTADOS_SEGUROS,
+)
+
+for aviso_seguro in [aviso_anios_seguro, aviso_estados_seguro]:
+    mostrar_aviso_datos(aviso_seguro)
+
+if aviso_anios_seguro:
+    anios_seleccionados = anios_procesables
+if aviso_estados_seguro:
+    estados_seleccionados = estados_procesables
 
 # Aplicar filtros base
 df_filtrado = df_maestro.copy()
@@ -2562,6 +2609,7 @@ st.sidebar.markdown(
         <a href="#analisis-cruzado-360">Análisis Cruzado 360</a>
         <a href="#analisis-ia">Análisis Con IA</a>
     </nav>
+    <a class="reset-link" href="?sos_dashboard=1">SOS: Limpiar Filtros Pesados</a>
     <a class="reset-link" href="?reset_dashboard=1">Restablecer A Default</a>
     """,
     unsafe_allow_html=True
