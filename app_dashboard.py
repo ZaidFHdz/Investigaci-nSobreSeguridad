@@ -84,6 +84,15 @@ def seleccion_procesable(valores, fallback, max_items):
     )
     return seleccion, mensaje
 
+
+def recortar_widget_si_es_pesado(clave, valores, fallback, max_items):
+    valores = list(valores or [])
+    if len(valores) <= max_items:
+        return False
+    seleccion = [valor for valor in fallback if valor in valores] or valores[:max_items]
+    st.session_state[clave] = seleccion
+    return True
+
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Dashboard de Seguridad MX",
@@ -2497,6 +2506,15 @@ anios_seleccionados = st.sidebar.multiselect(
     key="anios_globales"
 )
 
+if recortar_widget_si_es_pesado(
+    "anios_globales",
+    anios_seleccionados,
+    anios_disponibles[-min(MAX_ANIOS_SEGUROS, len(anios_disponibles)):],
+    MAX_ANIOS_SEGUROS,
+):
+    st.warning("Modo seguro: se redujo la selección de años para evitar que la app se congele.")
+    st.rerun()
+
 estados_disponibles = sorted(df_maestro["Entidad federativa"].unique().tolist())
 estados_default = (
     ["ESTADOS UNIDOS MEXICANOS"]
@@ -2517,6 +2535,15 @@ estados_seleccionados = st.sidebar.multiselect(
     estados_disponibles,
     key="estados_globales"
 )
+
+if recortar_widget_si_es_pesado(
+    "estados_globales",
+    estados_seleccionados,
+    estados_default,
+    MAX_ESTADOS_SEGUROS,
+):
+    st.warning("Modo seguro: se redujo la selección de estados para evitar que la app se congele.")
+    st.rerun()
 
 anios_procesables, aviso_anios_seguro = seleccion_procesable(
     anios_seleccionados,
