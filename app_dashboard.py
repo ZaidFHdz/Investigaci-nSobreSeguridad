@@ -305,13 +305,26 @@ st.markdown("""
     div[data-testid="stTextInput"] div[data-baseweb="input"] > div,
     div[data-testid="stTextInput"] div[data-baseweb="input"] > div:hover,
     div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:active,
     div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div,
     div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:hover,
-    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:focus-within {
+    div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:focus-within,
+    div[data-testid="stTextInput"] [aria-invalid="true"],
+    div[data-testid="stTextInput"] [data-invalid="true"],
+    div[data-testid="stTextInput"] [style*="255, 75, 75"],
+    div[data-testid="stTextInput"] [style*="red"] {
         border-color: var(--app-border) !important;
         box-shadow: none !important;
         outline: none !important;
         background: var(--app-panel) !important;
+    }
+
+    div[data-testid="stTextInput"] *,
+    .chat-form div[data-testid="stTextInput"] * {
+        border-color: var(--app-border) !important;
+        outline-color: var(--app-border) !important;
+        box-shadow: none !important;
     }
 
     div[data-baseweb="select"] *,
@@ -674,10 +687,10 @@ st.markdown("""
         position: fixed;
         left: 0;
         top: 0;
-        width: 136px;
-        height: 136px;
-        z-index: 999998;
-        pointer-events: auto;
+        width: 0;
+        height: 0;
+        z-index: -1;
+        pointer-events: none;
         background: transparent;
     }
 
@@ -840,16 +853,33 @@ st.markdown(
     div[data-testid="stTextInput"] div[data-baseweb="input"] > div,
     div[data-testid="stTextInput"] div[data-baseweb="input"] > div:hover,
     div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:focus,
+    div[data-testid="stTextInput"] div[data-baseweb="input"] > div:active,
     div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div,
     div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:hover,
     div[data-testid="stTextInput"] div[data-baseweb="input"][aria-invalid="true"] > div:focus-within,
+    div[data-testid="stTextInput"] [aria-invalid="true"],
+    div[data-testid="stTextInput"] [data-invalid="true"],
+    div[data-testid="stTextInput"] [style*="255, 75, 75"],
+    div[data-testid="stTextInput"] [style*="red"],
     .chat-form div[data-baseweb="input"] > div,
     .chat-form div[data-baseweb="input"] > div:hover,
-    .chat-form div[data-baseweb="input"] > div:focus-within {{
+    .chat-form div[data-baseweb="input"] > div:focus-within,
+    .chat-form [aria-invalid="true"],
+    .chat-form [data-invalid="true"],
+    .chat-form [style*="255, 75, 75"],
+    .chat-form [style*="red"] {{
         border-color: var(--app-border) !important;
         box-shadow: none !important;
         outline: none !important;
         background: var(--app-panel) !important;
+    }}
+
+    div[data-testid="stTextInput"] *,
+    .chat-form div[data-testid="stTextInput"] * {{
+        border-color: var(--app-border) !important;
+        outline-color: var(--app-border) !important;
+        box-shadow: none !important;
     }}
 
     div[data-testid="stTextInput"] input::placeholder {{
@@ -1094,6 +1124,52 @@ def aviso_cobertura_envipe(df, anios_seleccionados, columna="ENV_Estimaciones pu
         "; ".join(detalles) +
         ". Esto puede deberse a que el archivo no trae datos útiles para esos años o a que el indicador quedó en cero en la fuente."
     )
+
+
+def aviso_figura(fig):
+    valores = []
+    try:
+        trazos = list(fig.data)
+    except Exception:
+        return None
+
+    for trazo in trazos:
+        for atributo in ("y", "z", "values"):
+            datos = getattr(trazo, atributo, None)
+            if datos is None:
+                continue
+            try:
+                arr = np.asarray(datos, dtype=float).ravel()
+            except (TypeError, ValueError):
+                continue
+            arr = arr[np.isfinite(arr)]
+            if arr.size:
+                valores.append(arr)
+
+    if not valores:
+        return None
+
+    datos = np.concatenate(valores)
+    if datos.size == 0:
+        return "Este gráfico no tiene valores numéricos suficientes para interpretarse bien."
+
+    proporcion_ceros = float(np.mean(datos == 0))
+    proporcion_repetidos = 1 - (len(np.unique(datos)) / max(len(datos), 1))
+
+    if proporcion_ceros >= 0.5:
+        return "Aviso de datos: muchos valores del gráfico están en 0; puede deberse a cobertura limitada, datos faltantes o indicadores sin registro para los filtros elegidos."
+    if proporcion_repetidos >= 0.75:
+        return "Aviso de datos: muchos valores del gráfico se repiten; puede deberse a agregaciones, filtros amplios o baja variación en la fuente."
+    if np.nanstd(datos) == 0:
+        return "Aviso de datos: la serie no tiene variación; el gráfico puede verse plano por la cobertura o por los filtros seleccionados."
+    return None
+
+
+def mostrar_grafico(fig, *args, df_datos=None, columnas_aviso=None, **kwargs):
+    if df_datos is not None:
+        mostrar_aviso_datos(aviso_calidad_datos(df_datos, columnas_aviso))
+    mostrar_aviso_datos(aviso_figura(fig))
+    st.plotly_chart(fig, *args, **kwargs)
 
 
 def preparar_descarga_tabla(df):
@@ -2292,7 +2368,7 @@ def mostrar_artefacto_chat(
                 unsafe_allow_html=True
             )
             mostrar_aviso_datos(aviso_calidad_datos(df_master))
-            st.plotly_chart(fig, width="stretch", theme=None)
+            mostrar_grafico(fig, width="stretch", theme=None)
         elif nota_auto:
             mostrar_aviso_datos(nota_auto)
 
@@ -2637,6 +2713,25 @@ components.html(
             }
         };
 
+        const repairTextInputs = () => {
+            const border = getVar("--app-border", "#303030");
+            doc.querySelectorAll(
+                'div[data-testid="stTextInput"] div[data-baseweb="input"], ' +
+                'div[data-testid="stTextInput"] div[data-baseweb="input"] > div, ' +
+                'div[data-testid="stTextInput"] input, ' +
+                'div[data-testid="stTextInput"] *, ' +
+                '.chat-form div[data-baseweb="input"], ' +
+                '.chat-form div[data-baseweb="input"] > div, ' +
+                '.chat-form input, ' +
+                '.chat-form *'
+            ).forEach((node) => {
+                node.style.setProperty("border-color", border, "important");
+                node.style.setProperty("box-shadow", "none", "important");
+                node.style.setProperty("outline", "none", "important");
+                node.style.setProperty("outline-color", border, "important");
+            });
+        };
+
         const findSidebarOpenButton = () => {
             const explicit = [
                 'button[data-testid="stSidebarCollapsedControl"]',
@@ -2695,13 +2790,13 @@ components.html(
         };
 
         doc.addEventListener("mousemove", (event) => {
-            if (event.clientX <= 22 && event.clientY <= 118 && isSidebarCollapsed()) {
+            if (event.clientX <= 34 && isSidebarCollapsed()) {
                 openSidebarFromHotCorner();
             }
         }, true);
 
         doc.addEventListener("click", (event) => {
-            if (event.clientX <= 72 && event.clientY <= 136 && isSidebarCollapsed()) {
+            if (event.clientX <= 58 && isSidebarCollapsed()) {
                 openSidebarFromHotCorner();
             }
         }, true);
@@ -2709,6 +2804,7 @@ components.html(
         doc.addEventListener("change", (event) => {
             if (event.target.closest('input, select, textarea, [data-baseweb="select"]')) {
                 animateRefresh();
+                repairTextInputs();
             }
         }, true);
 
@@ -2717,7 +2813,11 @@ components.html(
             if (event.target.closest('button, [role="option"], [data-baseweb="tag"]')) {
                 animateRefresh();
             }
+            repairTextInputs();
         }, true);
+
+        doc.addEventListener("focusin", repairTextInputs, true);
+        doc.addEventListener("input", repairTextInputs, true);
 
         doc.addEventListener("click", (event) => {
             const link = event.target.closest('.side-nav a[href^="#"]');
@@ -2733,6 +2833,7 @@ components.html(
         new MutationObserver(() => {
             scheduleSync();
             bindHotCorner();
+            repairTextInputs();
             maybeScrollToAiResponse();
         }).observe(doc.body, {
             attributes: true,
@@ -2742,6 +2843,8 @@ components.html(
 
         win.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleSync);
         bindHotCorner();
+        repairTextInputs();
+        win.setInterval(repairTextInputs, 700);
         scheduleSync();
         maybeScrollToAiResponse();
     })();
@@ -2799,7 +2902,7 @@ if (
     fig_envipe.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig_envipe)
     ajustar_legenda_larga(fig_envipe, df_inseguro)
-    st.plotly_chart(fig_envipe, width="stretch", theme=None)
+    mostrar_grafico(fig_envipe, width="stretch", theme=None)
 else:
     mostrar_no_disponible("No hay suficientes años o datos de ENVIPE para dibujar la evolución.")
 
@@ -2846,7 +2949,7 @@ if not df_sexo_env.empty and "ENV_Estimaciones puntuales" in df_sexo_env.columns
 
     fig_sexo.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig_sexo)
-    st.plotly_chart(fig_sexo, width="stretch", theme=None)
+    mostrar_grafico(fig_sexo, width="stretch", theme=None)
 
 # --- SECCION 2: CIFRA NEGRA ---
 st.markdown("""
@@ -2906,7 +3009,7 @@ if cols_cn:
             fig_cn.update_layout(yaxis_ticksuffix="%")
             aplicar_estilo_figura(fig_cn)
             ajustar_legenda_larga(fig_cn, df_cn_plot)
-            st.plotly_chart(fig_cn, width="stretch", theme=None)
+            mostrar_grafico(fig_cn, width="stretch", theme=None)
         else:
             mostrar_no_disponible("No hay suficientes años o datos de cifra negra para el delito seleccionado.")
     else:
@@ -2965,7 +3068,7 @@ if "IE" in nivel_incidencia:
 
             aplicar_estilo_figura(fig_ie)
             ajustar_legenda_larga(fig_ie, df_ie)
-            st.plotly_chart(fig_ie, width="stretch", theme=None)
+            mostrar_grafico(fig_ie, width="stretch", theme=None)
         else:
             mostrar_no_disponible("No hay suficientes años o datos de incidencia general para los filtros seleccionados.")
     else:
@@ -3032,7 +3135,7 @@ else:
 
                 aplicar_estilo_figura(fig_itd)
                 ajustar_legenda_larga(fig_itd, df_itd_plot)
-                st.plotly_chart(fig_itd, width="stretch", theme=None)
+                mostrar_grafico(fig_itd, width="stretch", theme=None)
         else:
             mostrar_no_disponible("No se detectaron delitos de incidencia específica.")
     else:
@@ -3227,7 +3330,7 @@ if cols_ie and cols_cn and cols_itd:
             fig_bubble.update_traces(marker=dict(line=dict(width=0.8, color=COLOR_PANEL)))
             fig_bubble.update_layout(margin=dict(l=68, r=34, t=62, b=72))
             ajustar_legenda_larga(fig_bubble, df_master)
-            st.plotly_chart(fig_bubble, width="stretch", theme=None)
+            mostrar_grafico(fig_bubble, width="stretch", theme=None)
 
             st.divider()
 
@@ -3272,7 +3375,7 @@ if cols_ie and cols_cn and cols_itd:
                         font=dict(color=COLOR_TEXTO, size=11),
                     )
                 )
-                st.plotly_chart(fig_bar, width="stretch", theme=None)
+                mostrar_grafico(fig_bar, width="stretch", theme=None)
 
             with col2:
                 # --- GRÁFICA 3: PASTEL ---
@@ -3323,7 +3426,7 @@ if cols_ie and cols_cn and cols_itd:
                         font=dict(color=COLOR_TEXTO, size=11),
                     )
                 )
-                st.plotly_chart(fig_pie, width="stretch", theme=None)
+                mostrar_grafico(fig_pie, width="stretch", theme=None)
 
             st.divider()
 
@@ -3393,7 +3496,7 @@ if cols_ie and cols_cn and cols_itd:
                         title_standoff=28
                     )
                 )
-                st.plotly_chart(fig_lines, width="stretch", theme=None)
+                mostrar_grafico(fig_lines, width="stretch", theme=None)
 
                 st.divider()
 
@@ -3509,7 +3612,7 @@ if cols_ie and cols_cn and cols_itd:
                     showgrid=False,
                     zeroline=False,
                 )
-                st.plotly_chart(fig_corr, width="stretch", theme=None)
+                mostrar_grafico(fig_corr, width="stretch", theme=None)
 
                 mostrar_tabla_correlacion(matriz_corr)
             else:
@@ -3618,7 +3721,7 @@ if cols_ie and cols_cn and cols_itd:
                 fig_scatter_corr.update_layout(margin=dict(l=68, r=34, t=62, b=72))
                 if color_por == "Entidad federativa":
                     ajustar_legenda_larga(fig_scatter_corr, df_scatter)
-                st.plotly_chart(fig_scatter_corr, width="stretch", theme=None)
+                mostrar_grafico(fig_scatter_corr, width="stretch", theme=None)
             else:
                 mostrar_no_disponible("No hay variación suficiente para calcular esta correlación.")
 
@@ -3935,7 +4038,7 @@ if mostrar_chat_ia:
             f'<div class="generated-chart-note">{html.escape(grafico["nota"])}</div>',
             unsafe_allow_html=True
         )
-        st.plotly_chart(grafico["fig"], width="stretch", theme=None)
+        mostrar_grafico(grafico["fig"], width="stretch", theme=None)
 
     if st.session_state.pop("ai_autoscroll_ready", False):
         st.markdown('<div data-ai-autoscroll="1"></div>', unsafe_allow_html=True)
