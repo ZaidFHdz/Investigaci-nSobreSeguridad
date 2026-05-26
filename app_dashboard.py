@@ -477,6 +477,85 @@ st.markdown("""
         stroke: var(--app-text) !important;
     }
 
+    details[data-testid="stExpander"],
+    div[data-testid="stExpander"] {
+        border: 1px solid var(--app-border) !important;
+        border-radius: 8px !important;
+        background: var(--app-panel) !important;
+        color: var(--app-text) !important;
+        overflow: hidden;
+    }
+
+    details[data-testid="stExpander"] summary,
+    details[data-testid="stExpander"] summary:hover,
+    details[data-testid="stExpander"] summary:focus,
+    div[data-testid="stExpander"] summary,
+    div[data-testid="stExpander"] summary:hover,
+    div[data-testid="stExpander"] summary:focus,
+    div[data-testid="stExpander"] button,
+    div[data-testid="stExpander"] button:hover,
+    div[data-testid="stExpander"] button:focus {
+        background: var(--app-panel) !important;
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+
+    details[data-testid="stExpander"] *,
+    div[data-testid="stExpander"] *,
+    div[data-testid="stExpanderDetails"] *,
+    div[data-testid="stExpander"] svg,
+    div[data-testid="stExpander"] svg * {
+        color: var(--app-text) !important;
+        fill: var(--app-text) !important;
+        stroke: var(--app-text) !important;
+    }
+
+    div[data-testid="stExpanderDetails"],
+    div[data-testid="stExpanderDetails"] > div {
+        background: var(--app-panel) !important;
+        color: var(--app-text) !important;
+    }
+
+    div[data-testid="stCode"],
+    div[data-testid="stCodeBlock"],
+    div[data-testid="stCodeBlock"] pre,
+    div[data-testid="stCodeBlock"] code,
+    pre,
+    code {
+        background: var(--app-soft) !important;
+        color: var(--app-text) !important;
+        border-color: var(--app-border) !important;
+    }
+
+    div[data-testid="stCode"],
+    div[data-testid="stCodeBlock"] {
+        border: 1px solid var(--app-border) !important;
+        border-radius: 8px !important;
+        overflow: hidden !important;
+    }
+
+    div[data-testid="stCodeBlock"] button,
+    div[data-testid="stCodeBlock"] button:hover,
+    div[data-testid="stCodeBlock"] button:focus,
+    div[data-testid="stCodeBlock"] [role="button"] {
+        background: var(--app-panel) !important;
+        color: var(--app-text) !important;
+        border: 1px solid var(--app-border) !important;
+        box-shadow: none !important;
+        opacity: 1 !important;
+    }
+
+    div[data-testid="stCodeBlock"] button *,
+    div[data-testid="stCodeBlock"] [role="button"] *,
+    div[data-testid="stCodeBlock"] svg,
+    div[data-testid="stCodeBlock"] svg * {
+        color: var(--app-text) !important;
+        fill: var(--app-text) !important;
+        stroke: var(--app-text) !important;
+    }
+
     div[data-testid="stPlotlyChart"] {
         border: 1px solid var(--app-border);
         border-radius: 8px;
