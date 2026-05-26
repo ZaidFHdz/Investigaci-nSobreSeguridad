@@ -17,7 +17,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.12"
+APP_VERSION = "V1.13"
 
 CONTEXTO_CONCEPTUAL_SEGURIDAD = """
 Contexto conceptual fijo para interpretar el tablero:
@@ -2064,11 +2064,13 @@ def etiquetas_metricas_cruce():
 
 def detectar_metricas_pedidas(texto, disponibles=None, minimo=1):
     texto = (texto or "").lower()
+    metricas_validas = set(etiquetas_metricas_cruce())
     disponibles = (
         list(etiquetas_metricas_cruce().keys())
         if disponibles is None
         else list(disponibles)
     )
+    disponibles = [metrica for metrica in disponibles if metrica in metricas_validas]
     candidatas = []
     patrones = [
         ("Percepcion", ["percep", "inseguridad", "envipe"]),
@@ -2280,7 +2282,18 @@ def preparar_cruce_agrupado(df_master, texto="", grupo_default=None, metricas=No
     if df_master is None or df_master.empty:
         return pd.DataFrame(), [], []
 
-    metricas = [m for m in (metricas or detectar_metricas_pedidas(texto, df_master.columns)) if m in df_master.columns]
+    metricas_validas = set(etiquetas_metricas_cruce())
+    metricas = [
+        m for m in (metricas or detectar_metricas_pedidas(texto, df_master.columns))
+        if m in metricas_validas and m in df_master.columns
+    ]
+    if not metricas:
+        return pd.DataFrame(), [], []
+
+    df_base = df_master.copy()
+    for metrica in metricas:
+        df_base[metrica] = pd.to_numeric(df_base[metrica], errors="coerce")
+    metricas = [metrica for metrica in metricas if df_base[metrica].notna().any()]
     if not metricas:
         return pd.DataFrame(), [], []
 
@@ -2289,9 +2302,9 @@ def preparar_cruce_agrupado(df_master, texto="", grupo_default=None, metricas=No
         grupos = grupo_default or (["Año", "Entidad federativa"] if {"Año", "Entidad federativa"}.issubset(df_master.columns) else [])
 
     if grupos:
-        df_plot = df_master.groupby(grupos, as_index=False)[metricas].mean().round(4)
+        df_plot = df_base.groupby(grupos, as_index=False)[metricas].mean().round(4)
     else:
-        df_plot = df_master[metricas].copy()
+        df_plot = df_base[metricas].copy()
 
     return df_plot.dropna(how="all", subset=metricas), grupos, metricas
 
