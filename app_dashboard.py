@@ -1500,7 +1500,9 @@ def obtener_gemini_api_key():
     return str(clave).strip()
 
 
-def mensaje_error_gemini(api_key):
+def mensaje_error_gemini(api_key, detalle=None):
+    if detalle:
+        return detalle
     if genai is None:
         return (
             "No se pudo conectar con Gemini porque falta el paquete "
@@ -1520,14 +1522,20 @@ def mensaje_error_gemini(api_key):
 
 @st.cache_resource
 def cargar_modelo_ia(api_key):
-    if genai is None or not api_key:
-        return None
+    if genai is None:
+        return None, mensaje_error_gemini(api_key)
+
+    if not api_key:
+        return None, mensaje_error_gemini(api_key)
 
     try:
         genai.configure(api_key=api_key)
-        return genai.GenerativeModel("gemini-2.5-flash")
-    except Exception:
-        return None
+        return genai.GenerativeModel("gemini-2.5-flash"), None
+    except Exception as error:
+        return None, (
+            "Gemini recibió una API key, pero no pudo inicializar el modelo. "
+            f"Detalle técnico: {type(error).__name__}: {error}"
+        )
 
 
 def resumen_numerico(df, columnas):
@@ -4605,10 +4613,10 @@ st.markdown(
 
 if st.button("Generar análisis con IA", type="primary"):
     gemini_api_key = obtener_gemini_api_key()
-    modelo_ia = cargar_modelo_ia(gemini_api_key)
+    modelo_ia, error_gemini = cargar_modelo_ia(gemini_api_key)
 
     if modelo_ia is None:
-        st.error(mensaje_error_gemini(gemini_api_key))
+        st.error(mensaje_error_gemini(gemini_api_key, error_gemini))
     else:
         contexto_ia = construir_contexto_ia(
             df_filtrado=df_filtrado,
@@ -4734,10 +4742,10 @@ if pregunta_pendiente:
         })
 
         gemini_api_key_chat = obtener_gemini_api_key()
-        modelo_ia_chat = cargar_modelo_ia(gemini_api_key_chat)
+        modelo_ia_chat, error_gemini_chat = cargar_modelo_ia(gemini_api_key_chat)
 
         if modelo_ia_chat is None:
-            respuesta_chat = mensaje_error_gemini(gemini_api_key_chat)
+            respuesta_chat = mensaje_error_gemini(gemini_api_key_chat, error_gemini_chat)
             historial_chat.append({"role": "assistant", "content": respuesta_chat})
             st.session_state.pop("pregunta_ia_pendiente", None)
             st.session_state["ai_autoscroll_ready"] = True
