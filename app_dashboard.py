@@ -17,7 +17,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.11"
+APP_VERSION = "V1.12"
 
 CONTEXTO_CONCEPTUAL_SEGURIDAD = """
 Contexto conceptual fijo para interpretar el tablero:
@@ -1622,6 +1622,23 @@ def obtener_gemini_api_key():
     return ""
 
 
+def obtener_gemini_modelo():
+    lectores_secrets = [
+        lambda: st.secrets.get("GEMINI_MODEL", ""),
+        lambda: st.secrets.to_dict().get("GEMINI_MODEL", ""),
+    ]
+
+    for lector in lectores_secrets:
+        try:
+            modelo = str(lector() or "").strip()
+            if modelo:
+                return modelo
+        except Exception:
+            pass
+
+    return str(os.environ.get("GEMINI_MODEL", "gemini-2.5-pro") or "gemini-2.5-pro").strip()
+
+
 def diagnostico_gemini_secrets():
     fuente = st.session_state.get("gemini_config_source", "desconocida")
     claves_visibles = st.session_state.get("gemini_secret_keys_visibles", [])
@@ -1636,7 +1653,7 @@ def diagnostico_gemini_secrets():
     return " ".join(partes)
 
 
-def mensaje_error_gemini(api_key, detalle=None):
+def mensaje_error_gemini(api_key, detalle=None, nombre_modelo=None):
     if detalle:
         return detalle
     if genai is None:
@@ -1653,12 +1670,13 @@ def mensaje_error_gemini(api_key, detalle=None):
         )
     return (
         "Gemini recibió una API key, pero no pudo inicializar el modelo. "
-        "Revisa que la key sea válida, que tenga acceso a Gemini API y que no tenga espacios extra."
+        f"Modelo solicitado: `{nombre_modelo or 'no especificado'}`. "
+        "Revisa que la key sea válida, que tenga acceso a ese modelo y que no tenga espacios extra."
     )
 
 
 @st.cache_resource
-def cargar_modelo_ia(api_key):
+def cargar_modelo_ia(api_key, nombre_modelo):
     if genai is None:
         return None, mensaje_error_gemini(api_key)
 
@@ -1667,10 +1685,10 @@ def cargar_modelo_ia(api_key):
 
     try:
         genai.configure(api_key=api_key)
-        return genai.GenerativeModel("gemini-2.5-flash"), None
+        return genai.GenerativeModel(nombre_modelo), None
     except Exception as error:
         return None, (
-            "Gemini recibió una API key, pero no pudo inicializar el modelo. "
+            f"No se pudo inicializar el modelo `{nombre_modelo}`. "
             f"Detalle técnico: {type(error).__name__}: {error}"
         )
 
@@ -5140,10 +5158,11 @@ st.markdown(
 
 if st.button("Generar análisis con IA", type="primary"):
     gemini_api_key = obtener_gemini_api_key()
-    modelo_ia, error_gemini = cargar_modelo_ia(gemini_api_key)
+    nombre_modelo_ia = obtener_gemini_modelo()
+    modelo_ia, error_gemini = cargar_modelo_ia(gemini_api_key, nombre_modelo_ia)
 
     if modelo_ia is None:
-        st.error(mensaje_error_gemini(gemini_api_key, error_gemini))
+        st.error(mensaje_error_gemini(gemini_api_key, error_gemini, nombre_modelo_ia))
     else:
         contexto_ia = construir_contexto_ia(
             df_filtrado=df_filtrado,
@@ -5271,10 +5290,15 @@ if pregunta_pendiente:
         })
 
         gemini_api_key_chat = obtener_gemini_api_key()
-        modelo_ia_chat, error_gemini_chat = cargar_modelo_ia(gemini_api_key_chat)
+        nombre_modelo_chat = obtener_gemini_modelo()
+        modelo_ia_chat, error_gemini_chat = cargar_modelo_ia(gemini_api_key_chat, nombre_modelo_chat)
 
         if modelo_ia_chat is None:
-            respuesta_chat = mensaje_error_gemini(gemini_api_key_chat, error_gemini_chat)
+            respuesta_chat = mensaje_error_gemini(
+                gemini_api_key_chat,
+                error_gemini_chat,
+                nombre_modelo_chat,
+            )
             historial_chat.append({"role": "assistant", "content": respuesta_chat})
             st.session_state.pop("pregunta_ia_pendiente", None)
             st.session_state["ai_autoscroll_ready"] = True

@@ -1,6 +1,7 @@
 *
 
 !app_dashboard.py
+!listar_modelos_gemini.py
 !REPORTE_LIMPIO_FINAL.parquet
 !requirements.txt
 !README.md

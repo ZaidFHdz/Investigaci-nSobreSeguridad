@@ -1,0 +1,119 @@
+import argparse
+import os
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:  # Python < 3.11
+    tomllib = None
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+
+SECRETS_PATH = Path(".streamlit/secrets.toml")
+
+
+def cargar_secret_streamlit(nombre):
+    if tomllib is None or not SECRETS_PATH.exists():
+        return ""
+
+    try:
+        with SECRETS_PATH.open("rb") as archivo:
+            secrets = tomllib.load(archivo)
+    except (OSError, tomllib.TOMLDecodeError):
+        return ""
+
+    return str(secrets.get(nombre, "") or "").strip()
+
+
+def obtener_configuracion():
+    api_key = (
+        os.environ.get("GEMINI_API_KEY", "").strip()
+        or cargar_secret_streamlit("GEMINI_API_KEY")
+    )
+    modelo_preferido = (
+        os.environ.get("GEMINI_MODEL", "").strip()
+        or cargar_secret_streamlit("GEMINI_MODEL")
+        or "gemini-2.5-pro"
+    )
+    return api_key, modelo_preferido
+
+
+def listar_modelos(solo_generate_content=True):
+    if genai is None:
+        raise RuntimeError(
+            "Falta instalar `google-generativeai` en este entorno. "
+            "Instala requirements.txt o usa el venv correcto."
+        )
+
+    api_key, modelo_preferido = obtener_configuracion()
+    if not api_key:
+        raise RuntimeError(
+            "No encontré GEMINI_API_KEY en variables de entorno ni en "
+            ".streamlit/secrets.toml."
+        )
+
+    genai.configure(api_key=api_key)
+
+    print(f"Modelo preferido configurado: {modelo_preferido}")
+    print("Modelos disponibles:")
+    print()
+
+    encontrados = 0
+    for modelo in genai.list_models():
+        metodos = list(getattr(modelo, "supported_generation_methods", []) or [])
+        if solo_generate_content and "generateContent" not in metodos:
+            continue
+
+        encontrados += 1
+        print(modelo.name)
+        print("  Métodos:", ", ".join(metodos) if metodos else "No reportados")
+        print()
+
+    if encontrados == 0:
+        print("No encontré modelos compatibles con el filtro actual.")
+
+
+def probar_modelo(nombre_modelo):
+    if genai is None:
+        raise RuntimeError("Falta instalar `google-generativeai`.")
+
+    api_key, _ = obtener_configuracion()
+    if not api_key:
+        raise RuntimeError("No encontré GEMINI_API_KEY.")
+
+    genai.configure(api_key=api_key)
+    modelo = genai.GenerativeModel(nombre_modelo)
+    respuesta = modelo.generate_content(
+        "Responde solo con una frase breve: modelo listo."
+    )
+    print(getattr(respuesta, "text", "").strip() or "El modelo respondió sin texto.")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Lista modelos Gemini disponibles para la API key configurada."
+    )
+    parser.add_argument(
+        "--todos",
+        action="store_true",
+        help="Muestra todos los modelos, no solo los compatibles con generateContent.",
+    )
+    parser.add_argument(
+        "--probar",
+        metavar="MODELO",
+        help="Hace una llamada mínima de prueba con un modelo, por ejemplo gemini-2.5-pro.",
+    )
+    args = parser.parse_args()
+
+    if args.probar:
+        probar_modelo(args.probar)
+    else:
+        listar_modelos(solo_generate_content=not args.todos)
+
+
+if __name__ == "__main__":
+    main()
