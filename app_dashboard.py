@@ -17,7 +17,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.07"
+APP_VERSION = "V1.11"
 
 CONTEXTO_CONCEPTUAL_SEGURIDAD = """
 Contexto conceptual fijo para interpretar el tablero:
@@ -1919,6 +1919,9 @@ Reglas de estilo:
 - No repitas recomendaciones metodológicas salvo que el usuario las pida.
 - No cierres siempre con ideas de próximos cruces.
 - Si el usuario pide una gráfica o tabla, responde de forma concreta qué vas a visualizar o tabular.
+- Si una petición no es estadísticamente válida literalmente, no termines en "no se puede": explica la limitación en una frase y ofrece la visualización más cercana que sí se puede construir con los datos.
+- Si el usuario pide comparar estados para un solo año, usa ranking/barras de una variable elegida; si pide correlación entre estados con varios años, trátalo como correlación de series por entidad.
+- Si el usuario pide incidencia delictiva junto con cifra negra general, usa Incidencia_General y Cifra_Negra TOTAL; no lo reduzcas al delito transversal seleccionado salvo que el usuario nombre ese delito.
 - Si el usuario pide media, promedio, máximo, mínimo, suma, conteo o mediana, calcula con los datos del contexto y menciona que se mostrará como tabla descargable.
 - No inventes datos ni cambies la variable solicitada.
 
@@ -2023,7 +2026,7 @@ def metrica_pedida(texto, default="Cifra_Negra"):
     texto = (texto or "").lower()
     if "percep" in texto or "inseguridad" in texto or "envipe" in texto:
         return "Percepcion"
-    if "general" in texto or "ie_" in texto:
+    if "incidencia delictiva" in texto or "general" in texto or "ie_" in texto:
         return "Incidencia_General"
     if "especific" in texto or "delito" in texto or "amenaza" in texto:
         return "Incidencia_Especifica"
@@ -2043,13 +2046,17 @@ def etiquetas_metricas_cruce():
 
 def detectar_metricas_pedidas(texto, disponibles=None, minimo=1):
     texto = (texto or "").lower()
-    disponibles = list(disponibles or etiquetas_metricas_cruce().keys())
+    disponibles = (
+        list(etiquetas_metricas_cruce().keys())
+        if disponibles is None
+        else list(disponibles)
+    )
     candidatas = []
     patrones = [
         ("Percepcion", ["percep", "inseguridad", "envipe"]),
         ("Cifra_Negra", ["cifra", "negra", "denuncia", "denunci"]),
-        ("Incidencia_General", ["incidencia general", "general", "tasa general", "ie_"]),
-        ("Incidencia_Especifica", ["incidencia especifica", "incidencia específica", "especific", "delito", "amenaza"]),
+        ("Incidencia_General", ["incidencia general", "incidencia delictiva", "general", "tasa general", "ie_"]),
+        ("Incidencia_Especifica", ["incidencia especifica", "incidencia específica", "especific", "tipo de delito", "amenaza"]),
     ]
     for metrica, claves in patrones:
         if metrica in disponibles and any(clave in texto for clave in claves):
@@ -2079,6 +2086,13 @@ def detectar_grupos_pedidos(texto, columnas):
     if "seguridad" in texto and "Seguridad" in columnas:
         grupos.append("Seguridad")
     return grupos
+
+
+def texto_pide_incidencia_y_cifra(texto):
+    texto = (texto or "").lower()
+    pide_incidencia = "incidencia" in texto or "delictiva" in texto
+    pide_cifra = "cifra" in texto or "denuncia" in texto or "denunci" in texto
+    return pide_incidencia and pide_cifra
 
 
 def anios_mencionados_en_texto(texto):
@@ -2409,6 +2423,73 @@ def grafico_ranking_entidades_chat(df_master, texto, titulo=None):
     return fig, "Barras generadas con promedios por entidad para los filtros actuales."
 
 
+def grafico_correlacion_entidades_chat(df_master, texto, titulo=None):
+    if df_master is None or df_master.empty:
+        return None, "No hay datos cruzados suficientes para comparar entidades."
+
+    metrica = metrica_pedida(texto)
+    etiquetas = etiquetas_metricas_cruce()
+
+    if "Año" not in df_master.columns or df_master["Año"].nunique() < 2:
+        return grafico_ranking_entidades_chat(
+            df_master,
+            texto,
+            titulo=titulo or f"Comparación Por Estado: {etiquetas.get(metrica, metrica)}",
+        )
+
+    pivote = df_master.pivot_table(
+        index="Año",
+        columns="Entidad federativa",
+        values=metrica,
+        aggfunc="mean",
+    ).dropna(axis=1, thresh=2)
+
+    if pivote.shape[1] < 2:
+        return None, "No hay suficientes entidades con al menos dos años para correlacionar series estatales."
+
+    matriz = pivote.corr().round(3)
+    anotaciones = []
+    for fila, nombre_fila in enumerate(matriz.index):
+        for columna, nombre_columna in enumerate(matriz.columns):
+            valor = matriz.iloc[fila, columna]
+            anotaciones.append(
+                dict(
+                    x=nombre_columna,
+                    y=nombre_fila,
+                    text=f"{valor:.2f}",
+                    showarrow=False,
+                    font=dict(color=COLOR_TEXTO, size=11),
+                )
+            )
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=matriz.values,
+            x=matriz.columns,
+            y=matriz.index,
+            zmin=-1,
+            zmax=1,
+            colorscale=ESCALA_CORRELACION,
+            xgap=1,
+            ygap=1,
+            colorbar=dict(
+                tickfont=dict(color=COLOR_TEXTO),
+                title=dict(text="r", font=dict(color=COLOR_TEXTO)),
+            ),
+            hovertemplate="%{y}<br>%{x}<br>Correlación: %{z:.3f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=titulo or f"Correlación Entre Estados: {etiquetas.get(metrica, metrica)}",
+        annotations=anotaciones,
+    )
+    aplicar_estilo_figura(fig, altura=max(480, 22 * len(matriz) + 180))
+    fig.update_layout(margin=dict(l=150, r=92, t=66, b=120))
+    fig.update_xaxes(automargin=True, tickangle=35, showgrid=False, zeroline=False)
+    fig.update_yaxes(automargin=True, autorange="reversed", showgrid=False, zeroline=False)
+    return fig, "Correlación generada entre series temporales estatales para la variable elegida."
+
+
 def grafico_histograma_chat(df_master, texto, titulo=None):
     if df_master is None or df_master.empty:
         return None, "No hay datos cruzados suficientes para un histograma."
@@ -2460,6 +2541,63 @@ def grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados, titulo=None):
     fig.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig)
     return fig, "Comparación por sexo generada con ENVIPE filtrado."
+
+
+def grafico_lineas_incidencia_cifra_general_chat(df_total, anios_seleccionados, titulo=None):
+    if df_total is None or df_total.empty:
+        return None, "No hay datos filtrados suficientes para comparar incidencia y cifra negra general."
+
+    cols_ie = [c for c in df_total.columns if c.startswith("IE_") and c.endswith("_Est")]
+    cols_cn = [c for c in df_total.columns if c.startswith("CN_") and c.endswith("_TOTAL_Est")]
+
+    if not cols_ie or not cols_cn:
+        return None, "No hay columnas compatibles de incidencia general y cifra negra general."
+
+    df_ie = df_total.melt(
+        id_vars=["Entidad federativa"],
+        value_vars=cols_ie,
+        var_name="Indicador",
+        value_name="Valor",
+    )
+    df_ie["Año"] = df_ie["Indicador"].str.extract(r"IE_(\d{4})").astype(int)
+    df_ie = df_ie[df_ie["Año"].isin(anios_seleccionados)]
+    df_ie["Variable"] = "Incidencia General"
+
+    df_cn = df_total.melt(
+        id_vars=["Entidad federativa"],
+        value_vars=cols_cn,
+        var_name="Indicador",
+        value_name="Valor",
+    )
+    df_cn["Año"] = df_cn["Indicador"].str.extract(r"CN_(\d{4})").astype(int)
+    df_cn = df_cn[df_cn["Año"].isin(anios_seleccionados)]
+    df_cn["Variable"] = "Cifra Negra General"
+
+    df_plot = (
+        pd.concat([df_ie, df_cn], ignore_index=True)
+        .dropna(subset=["Valor"])
+        .groupby(["Entidad federativa", "Año", "Variable"], as_index=False)["Valor"]
+        .mean()
+    )
+
+    if df_plot.empty or df_plot["Año"].nunique() < 2:
+        return None, "No hay suficientes años para comparar incidencia general y cifra negra general."
+
+    df_plot["Serie"] = df_plot["Entidad federativa"] + " | " + df_plot["Variable"]
+    fig = px.line(
+        df_plot.sort_values(["Entidad federativa", "Variable", "Año"]),
+        x="Año",
+        y="Valor",
+        color="Entidad federativa",
+        line_dash="Variable",
+        markers=True,
+        title=titulo or "Incidencia General Y Cifra Negra General Por Estado",
+        labels={"Valor": "Valor", "Variable": "Variable"},
+        color_discrete_sequence=paleta_entidades(df_plot),
+    )
+    aplicar_estilo_figura(fig)
+    ajustar_legenda_larga(fig, df_plot)
+    return fig, "Líneas generadas con incidencia general y cifra negra general, no por delito específico."
 
 
 def grafico_relacion_cruce_chat(df_master, texto, titulo=None):
@@ -2515,7 +2653,11 @@ def grafico_generico_cruce_chat(df_master, texto, tipo="linea", titulo=None):
         return grafico_relacion_cruce_chat(df_master, texto, titulo=titulo)
 
     if tipo in {"correlacion", "correlación", "heatmap", "mapa_calor"}:
-        return grafico_correlacion_chat(df_master, titulo=titulo or "Matriz De Correlación")
+        return grafico_correlacion_chat(
+            df_master,
+            titulo=titulo or "Matriz De Correlación",
+            metricas=metricas,
+        )
 
     if tipo in {"pastel", "pie", "donut", "dona"}:
         metrica = metricas[0]
@@ -2640,21 +2782,27 @@ def grafico_generico_cruce_chat(df_master, texto, tipo="linea", titulo=None):
     if df_plot.empty or "Año" not in df_plot.columns or df_plot["Año"].nunique() < 2:
         return None, "No hay suficientes años para una línea temporal."
 
-    if len(metricas) > 1 and "Entidad federativa" not in detectar_grupos_pedidos(texto, df_master.columns):
-        df_long = df_plot.groupby("Año", as_index=False)[metricas].mean().melt(
-            id_vars="Año",
+    if len(metricas) > 1:
+        id_vars = ["Año"]
+        if "Entidad federativa" in df_plot.columns:
+            id_vars.append("Entidad federativa")
+        df_long = df_plot.groupby(id_vars, as_index=False)[metricas].mean().melt(
+            id_vars=id_vars,
             value_vars=metricas,
             var_name="Variable",
             value_name="Valor",
         )
         df_long["Variable"] = df_long["Variable"].map(etiquetas).fillna(df_long["Variable"])
+        color = "Entidad federativa" if "Entidad federativa" in df_long.columns else "Variable"
         fig = px.line(
             df_long,
             x="Año",
             y="Valor",
-            color="Variable",
+            color=color,
+            line_dash="Variable" if color != "Variable" else None,
             markers=True,
             title=titulo or "Evolución Comparada De Variables",
+            color_discrete_sequence=paleta_entidades(df_long) if color == "Entidad federativa" else PALETA_NEUTRA,
         )
     else:
         metrica = metricas[0]
@@ -2938,7 +3086,18 @@ def crear_grafico_desde_pregunta(
 
     texto = pregunta.lower()
 
+    if texto_pide_incidencia_y_cifra(texto) and any(
+        clave in texto
+        for clave in ["linea", "línea", "evolución", "evolucion", "compar", "años", "anios", "tiempo"]
+    ):
+        return grafico_lineas_incidencia_cifra_general_chat(
+            df_total,
+            anios_seleccionados,
+        )
+
     if "correl" in texto or "matriz" in texto or "heatmap" in texto:
+        if "estado" in texto or "entidad" in texto:
+            return grafico_correlacion_entidades_chat(df_master, texto)
         metricas_corr = detectar_metricas_pedidas(texto, etiquetas_metricas_cruce().keys(), minimo=2)
         if "cifra" in texto and ("percep" in texto or "inseguridad" in texto or "envipe" in texto):
             metricas_corr = ["Percepcion", "Cifra_Negra"]
@@ -3161,6 +3320,7 @@ Reglas:
 - Usa "cifra_negra" para denuncias, no denuncia, cifra negra.
 - Usa "incidencia_general" para tasa general estatal.
 - Usa "incidencia_especifica" para incidencia por delito seleccionado.
+- Si piden incidencia delictiva e cifra negra en una misma línea/comparación temporal, usa "cruce360" con tipo "linea" o la vista validada más cercana; la app priorizará incidencia general y cifra negra TOTAL cuando aplique.
 - Usa "cruce360" para relaciones/correlaciones entre percepción, cifra negra e incidencia.
 - Usa "correlacion" si piden matriz, correlación o heatmap.
 - Usa "denuncias_pastel" si piden pastel, dona, pie o proporción de denunciado/no denunciado.
