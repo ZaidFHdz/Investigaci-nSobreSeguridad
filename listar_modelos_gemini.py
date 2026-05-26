@@ -1,5 +1,7 @@
 import argparse
 import os
+import sys
+import warnings
 from pathlib import Path
 
 try:
@@ -8,12 +10,53 @@ except ImportError:  # Python < 3.11
     tomllib = None
 
 try:
-    import google.generativeai as genai
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        import google.generativeai as genai
 except ImportError:
     genai = None
 
 
 SECRETS_PATH = Path(".streamlit/secrets.toml")
+SECRETS_TEMPLATE = """# Archivo local. No se sube a Git.
+# Pega tu API key real entre comillas.
+GEMINI_API_KEY = "TU_API_KEY_AQUI"
+
+# Modelo recomendado para análisis más complejo del dashboard.
+GEMINI_MODEL = "gemini-2.5-pro"
+"""
+
+
+def mensaje_configuracion_faltante():
+    return f"""
+No encontré GEMINI_API_KEY.
+
+Opción recomendada para este proyecto:
+1. Crea el archivo local:
+   .streamlit/secrets.toml
+
+2. Pon este contenido:
+   GEMINI_API_KEY = "tu_api_key_real"
+   GEMINI_MODEL = "gemini-2.5-pro"
+
+También puedes generarlo con plantilla:
+   .venv-general/bin/python listar_modelos_gemini.py --crear-secrets
+
+Luego vuelve a correr:
+   .venv-general/bin/python listar_modelos_gemini.py
+
+Nota: .streamlit/secrets.toml está ignorado por Git para no subir tu key.
+""".strip()
+
+
+def crear_secrets_local():
+    SECRETS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if SECRETS_PATH.exists():
+        print(f"Ya existe {SECRETS_PATH}. No lo sobrescribí.")
+        return
+
+    SECRETS_PATH.write_text(SECRETS_TEMPLATE, encoding="utf-8")
+    print(f"Creé {SECRETS_PATH}. Abre el archivo y reemplaza TU_API_KEY_AQUI.")
 
 
 def cargar_secret_streamlit(nombre):
@@ -51,10 +94,7 @@ def listar_modelos(solo_generate_content=True):
 
     api_key, modelo_preferido = obtener_configuracion()
     if not api_key:
-        raise RuntimeError(
-            "No encontré GEMINI_API_KEY en variables de entorno ni en "
-            ".streamlit/secrets.toml."
-        )
+        raise RuntimeError(mensaje_configuracion_faltante())
 
     genai.configure(api_key=api_key)
 
@@ -83,7 +123,7 @@ def probar_modelo(nombre_modelo):
 
     api_key, _ = obtener_configuracion()
     if not api_key:
-        raise RuntimeError("No encontré GEMINI_API_KEY.")
+        raise RuntimeError(mensaje_configuracion_faltante())
 
     genai.configure(api_key=api_key)
     modelo = genai.GenerativeModel(nombre_modelo)
@@ -107,12 +147,23 @@ def main():
         metavar="MODELO",
         help="Hace una llamada mínima de prueba con un modelo, por ejemplo gemini-2.5-pro.",
     )
+    parser.add_argument(
+        "--crear-secrets",
+        action="store_true",
+        help="Crea .streamlit/secrets.toml con una plantilla local si no existe.",
+    )
     args = parser.parse_args()
 
-    if args.probar:
-        probar_modelo(args.probar)
-    else:
-        listar_modelos(solo_generate_content=not args.todos)
+    try:
+        if args.crear_secrets:
+            crear_secrets_local()
+        elif args.probar:
+            probar_modelo(args.probar)
+        else:
+            listar_modelos(solo_generate_content=not args.todos)
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

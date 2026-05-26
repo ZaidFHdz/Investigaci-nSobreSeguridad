@@ -8,6 +8,7 @@
 !.gitignore
 !.streamlit/
 !.streamlit/config.toml
+!.streamlit/secrets.example.toml
 
 .streamlit/secrets.toml
 __pycache__/
