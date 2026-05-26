@@ -1487,17 +1487,74 @@ def normalizar_entidades(df):
     )
 
 
-def obtener_gemini_api_key():
-    clave = ""
+def listar_claves_secrets_streamlit():
     try:
-        clave = st.secrets.get("GEMINI_API_KEY", "")
+        return sorted(str(clave) for clave in st.secrets.to_dict().keys())
     except Exception:
-        clave = ""
+        try:
+            return sorted(str(clave) for clave in st.secrets.keys())
+        except Exception:
+            return []
 
-    if not clave:
-        clave = os.environ.get("GEMINI_API_KEY", "")
 
-    return str(clave).strip()
+def guardar_diagnostico_gemini(fuente, claves_visibles, error_secrets=None):
+    st.session_state["gemini_config_source"] = fuente
+    st.session_state["gemini_secret_keys_visibles"] = claves_visibles
+    if error_secrets:
+        st.session_state["gemini_secret_error"] = str(error_secrets)
+    else:
+        st.session_state.pop("gemini_secret_error", None)
+
+
+def obtener_gemini_api_key():
+    claves_visibles = listar_claves_secrets_streamlit()
+    error_secrets = None
+
+    lectores_secrets = [
+        ("st.secrets['GEMINI_API_KEY']", lambda: st.secrets["GEMINI_API_KEY"]),
+        ("st.secrets.get('GEMINI_API_KEY')", lambda: st.secrets.get("GEMINI_API_KEY", "")),
+        ("st.secrets.to_dict()", lambda: st.secrets.to_dict().get("GEMINI_API_KEY", "")),
+    ]
+
+    for fuente, lector in lectores_secrets:
+        try:
+            clave = str(lector() or "").strip()
+            if clave:
+                guardar_diagnostico_gemini(fuente, claves_visibles)
+                return clave
+        except Exception as error:
+            error_secrets = error
+
+    for nombre_variable in [
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_GENERATIVE_AI_API_KEY",
+    ]:
+        clave = str(os.environ.get(nombre_variable, "") or "").strip()
+        if clave:
+            guardar_diagnostico_gemini(
+                f"variable de entorno {nombre_variable}",
+                claves_visibles,
+                error_secrets,
+            )
+            return clave
+
+    guardar_diagnostico_gemini("no encontrada", claves_visibles, error_secrets)
+    return ""
+
+
+def diagnostico_gemini_secrets():
+    fuente = st.session_state.get("gemini_config_source", "desconocida")
+    claves_visibles = st.session_state.get("gemini_secret_keys_visibles", [])
+    claves_txt = ", ".join(claves_visibles) if claves_visibles else "ninguna"
+    partes = [
+        f"Fuente detectada: {fuente}.",
+        f"Secrets visibles para esta app: {claves_txt}.",
+    ]
+    error_secrets = st.session_state.get("gemini_secret_error")
+    if error_secrets:
+        partes.append(f"Error al leer secrets: {error_secrets}")
+    return " ".join(partes)
 
 
 def mensaje_error_gemini(api_key, detalle=None):
@@ -1510,9 +1567,10 @@ def mensaje_error_gemini(api_key, detalle=None):
         )
     if not api_key:
         return (
-            "No se encontró `GEMINI_API_KEY`. Crea `.streamlit/secrets.toml` con "
-            "`GEMINI_API_KEY = \"tu_api_key\"` o define la variable de entorno "
-            "`GEMINI_API_KEY` antes de iniciar Streamlit."
+            "No se encontró `GEMINI_API_KEY` en el runtime de esta app. "
+            "En Streamlit Cloud confirma que el secret esté guardado en esta misma app, "
+            "espera a que propague y reinicia el despliegue. "
+            f"Diagnóstico: {diagnostico_gemini_secrets()}"
         )
     return (
         "Gemini recibió una API key, pero no pudo inicializar el modelo. "
