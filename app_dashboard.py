@@ -2081,6 +2081,169 @@ def detectar_grupos_pedidos(texto, columnas):
     return grupos
 
 
+def anios_mencionados_en_texto(texto):
+    return [int(valor) for valor in re.findall(r"\b(?:201[0-9]|202[0-9])\b", texto or "")]
+
+
+def pregunta_pide_todos_estados(pregunta):
+    texto = (pregunta or "").lower()
+    claves = [
+        "todos los estados",
+        "todas las entidades",
+        "todos las entidades",
+        "todos los estado",
+        "todos los estados disponibles",
+        "todos los estados de mexico",
+        "todos los estados de méxico",
+        "todo el pais por estado",
+        "todo el país por estado",
+        "las 32 entidades",
+        "32 entidades",
+    ]
+    return any(clave in texto for clave in claves)
+
+
+def quitar_agregado_nacional(df):
+    if df is None or df.empty or "Entidad federativa" not in df.columns:
+        return df
+    return df[df["Entidad federativa"] != "ESTADOS UNIDOS MEXICANOS"].copy()
+
+
+def construir_cruce_chat_desde_total(df_total_base, anios_uso, delito_master):
+    if df_total_base is None or df_total_base.empty:
+        return pd.DataFrame(), delito_master
+
+    df_total_base = df_total_base[df_total_base["Año"].isin(anios_uso)].copy()
+
+    cols_ie = [c for c in df_total_base.columns if c.startswith("IE_") and c.endswith("_Est")]
+    cols_cn = [c for c in df_total_base.columns if c.startswith("CN_") and c.endswith("_Est")]
+    cols_itd = [c for c in df_total_base.columns if c.startswith("ITD_") and c.endswith("_Est")]
+
+    if not (cols_ie and cols_cn and cols_itd):
+        return pd.DataFrame(), delito_master
+
+    df_env_cross = df_total_base[
+        df_total_base["Seguridad"] == "Inseguro"
+    ][[
+        "Entidad federativa",
+        "Año",
+        "ENV_Estimaciones puntuales",
+    ]].drop_duplicates()
+    df_env_cross = df_env_cross.rename(columns={"ENV_Estimaciones puntuales": "Percepcion"})
+
+    df_ie_cross = df_total_base.melt(
+        id_vars=["Entidad federativa"],
+        value_vars=cols_ie,
+        var_name="Ind",
+        value_name="Incidencia_General",
+    )
+    df_ie_cross["Año"] = df_ie_cross["Ind"].str.extract(r"IE_(\d{4})").astype(int)
+    df_ie_cross = df_ie_cross[
+        df_ie_cross["Año"].isin(anios_uso)
+    ][[
+        "Entidad federativa",
+        "Año",
+        "Incidencia_General",
+    ]].drop_duplicates()
+
+    df_cn_cross = df_total_base.melt(
+        id_vars=["Entidad federativa"],
+        value_vars=cols_cn,
+        var_name="Ind",
+        value_name="Cifra_Negra",
+    )
+    df_cn_cross["Año"] = df_cn_cross["Ind"].str.extract(r"CN_(\d{4})").astype(int)
+    df_cn_cross["Delito"] = df_cn_cross["Ind"].str.extract(r"CN_\d{4}_(.*)_Est")
+    df_cn_cross = df_cn_cross[df_cn_cross["Año"].isin(anios_uso)][[
+        "Entidad federativa",
+        "Año",
+        "Delito",
+        "Cifra_Negra",
+    ]].drop_duplicates()
+
+    df_itd_cross = df_total_base.melt(
+        id_vars=["Entidad federativa"],
+        value_vars=cols_itd,
+        var_name="Ind",
+        value_name="Incidencia_Especifica",
+    )
+    df_itd_cross["Año"] = df_itd_cross["Ind"].str.extract(r"ITD_(\d{4})").astype(int)
+    df_itd_cross["Delito"] = df_itd_cross["Ind"].str.extract(r"ITD_\d{4}_(.*)_Est")
+    df_itd_cross = df_itd_cross[df_itd_cross["Año"].isin(anios_uso)][[
+        "Entidad federativa",
+        "Año",
+        "Delito",
+        "Incidencia_Especifica",
+    ]].drop_duplicates()
+
+    delitos_cross = sorted(set(df_cn_cross["Delito"].dropna()) & set(df_itd_cross["Delito"].dropna()))
+    delito_uso = delito_master if delito_master in delitos_cross else (delitos_cross[0] if delitos_cross else None)
+    if not delito_uso:
+        return pd.DataFrame(), delito_master
+
+    df_cn_fil = df_cn_cross[df_cn_cross["Delito"] == delito_uso]
+    df_itd_fil = df_itd_cross[df_itd_cross["Delito"] == delito_uso]
+
+    df_cruce = pd.merge(
+        df_env_cross,
+        df_ie_cross,
+        on=["Entidad federativa", "Año"],
+        how="inner",
+    )
+    df_cruce = pd.merge(
+        df_cruce,
+        df_cn_fil,
+        on=["Entidad federativa", "Año"],
+        how="inner",
+    )
+    df_cruce = pd.merge(
+        df_cruce,
+        df_itd_fil,
+        on=["Entidad federativa", "Año", "Delito"],
+        how="inner",
+    )
+    return df_cruce.dropna(), delito_uso
+
+
+def preparar_datos_chat_por_pregunta(
+    pregunta,
+    df_filtrado,
+    df_total,
+    df_master,
+    anios_seleccionados,
+    delito_master,
+):
+    anios_uso = anios_mencionados_en_texto(pregunta) or list(anios_seleccionados)
+    usar_todos_estados = pregunta_pide_todos_estados(pregunta)
+
+    if usar_todos_estados and "df_maestro" in globals():
+        df_filtrado_uso = quitar_agregado_nacional(
+            df_maestro[df_maestro["Año"].isin(anios_uso)].copy()
+        )
+        df_total_uso = df_filtrado_uso[df_filtrado_uso["Sexo"] == "Total"].copy()
+        df_master_uso, delito_uso = construir_cruce_chat_desde_total(
+            df_total_uso,
+            anios_uso,
+            delito_master,
+        )
+    else:
+        df_filtrado_uso = df_filtrado[df_filtrado["Año"].isin(anios_uso)].copy()
+        df_total_uso = df_total[df_total["Año"].isin(anios_uso)].copy()
+        df_master_uso = (
+            df_master[df_master["Año"].isin(anios_uso)].copy()
+            if df_master is not None and not df_master.empty and "Año" in df_master.columns
+            else df_master
+        )
+        delito_uso = delito_master
+
+    estados_uso = (
+        sorted(df_filtrado_uso["Entidad federativa"].dropna().unique().tolist())
+        if "Entidad federativa" in df_filtrado_uso.columns
+        else []
+    )
+    return df_filtrado_uso, df_total_uso, df_master_uso, anios_uso, estados_uso, delito_uso
+
+
 def preparar_cruce_agrupado(df_master, texto="", grupo_default=None, metricas=None):
     if df_master is None or df_master.empty:
         return pd.DataFrame(), [], []
@@ -2101,12 +2264,17 @@ def preparar_cruce_agrupado(df_master, texto="", grupo_default=None, metricas=No
     return df_plot.dropna(how="all", subset=metricas), grupos, metricas
 
 
-def grafico_correlacion_chat(df_master, titulo="Matriz De Correlación"):
+def grafico_correlacion_chat(df_master, titulo="Matriz De Correlación", metricas=None):
     if df_master is None or df_master.empty:
         return None, "No hay datos cruzados suficientes para calcular correlaciones."
 
-    metricas = list(etiquetas_metricas_cruce().keys())
-    if not hay_variacion_suficiente(df_master, metricas[:2]):
+    metricas = [
+        metrica for metrica in (metricas or list(etiquetas_metricas_cruce().keys()))
+        if metrica in df_master.columns
+    ]
+    if len(metricas) < 2:
+        return None, "Selecciona al menos dos variables disponibles para calcular la correlación."
+    if not hay_variacion_suficiente(df_master, metricas):
         return None, "No hay variación suficiente para una matriz de correlación."
 
     matriz = df_master[metricas].corr().round(3)
@@ -2771,7 +2939,10 @@ def crear_grafico_desde_pregunta(
     texto = pregunta.lower()
 
     if "correl" in texto or "matriz" in texto or "heatmap" in texto:
-        return grafico_correlacion_chat(df_master)
+        metricas_corr = detectar_metricas_pedidas(texto, etiquetas_metricas_cruce().keys(), minimo=2)
+        if "cifra" in texto and ("percep" in texto or "inseguridad" in texto or "envipe" in texto):
+            metricas_corr = ["Percepcion", "Cifra_Negra"]
+        return grafico_correlacion_chat(df_master, metricas=metricas_corr)
 
     if "caja" in texto or "boxplot" in texto:
         return grafico_generico_cruce_chat(df_master, texto, tipo="box")
@@ -3026,7 +3197,12 @@ def crear_grafico_desde_spec_ia(
     tamano = spec.get("tamano") if spec.get("tamano") != "ninguno" else None
 
     if dataset == "correlacion" or tipo == "correlacion":
-        return grafico_correlacion_chat(df_master, titulo)
+        variables = set(etiquetas_metricas_cruce())
+        metricas_corr = [
+            valor for valor in [spec.get("x"), spec.get("y"), tamano]
+            if valor in variables
+        ]
+        return grafico_correlacion_chat(df_master, titulo, metricas=metricas_corr or None)
 
     if dataset == "denuncias_pastel" or tipo in {"pastel", "donut"}:
         return grafico_pastel_denuncias_chat(
@@ -3269,29 +3445,46 @@ def mostrar_grafico_chat(
     estados_seleccionados,
     sexo_percepcion,
     delito_master,
+    indice_mensaje=None,
 ):
     fig = None
     nota = mensaje.get("nota") or "Gráfico generado desde el chat."
+    pregunta = mensaje.get("pregunta", "")
+    (
+        df_filtrado_uso,
+        df_total_uso,
+        df_master_uso,
+        anios_uso,
+        estados_uso,
+        delito_uso,
+    ) = preparar_datos_chat_por_pregunta(
+        pregunta,
+        df_filtrado=df_filtrado,
+        df_total=df_total,
+        df_master=df_master,
+        anios_seleccionados=anios_seleccionados,
+        delito_master=delito_master,
+    )
 
     if mensaje.get("modo") == "spec":
         fig, nota_auto = crear_grafico_desde_spec_ia(
             spec=mensaje.get("spec"),
-            df_filtrado=df_filtrado,
-            df_total=df_total,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
+            df_filtrado=df_filtrado_uso,
+            df_total=df_total_uso,
+            df_master=df_master_uso,
+            anios_seleccionados=anios_uso,
             sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
+            delito_master=delito_uso,
         )
     else:
         fig, nota_auto = crear_grafico_desde_pregunta(
-            pregunta=mensaje.get("pregunta", ""),
-            df_filtrado=df_filtrado,
-            df_total=df_total,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
+            pregunta=pregunta,
+            df_filtrado=df_filtrado_uso,
+            df_total=df_total_uso,
+            df_master=df_master_uso,
+            anios_seleccionados=anios_uso,
             sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
+            delito_master=delito_uso,
         )
 
     nota = nota or nota_auto or "Gráfico generado desde el chat."
@@ -3299,19 +3492,38 @@ def mostrar_grafico_chat(
         st.info(nota_auto or "No pude reconstruir esta gráfica con los filtros actuales.")
         return
 
+    if pregunta_pide_todos_estados(pregunta) and "Se usaron todos los estados disponibles" not in nota:
+        nota = f"{nota} Se usaron todos los estados disponibles, no solo la selección lateral."
+
     st.markdown(
         f'<div class="generated-chart-note">{html.escape(nota)}</div>',
         unsafe_allow_html=True
     )
-    st.plotly_chart(fig, width="stretch", theme=None)
+    key_base = json.dumps(
+        {
+            "role": "chart",
+            "indice": indice_mensaje,
+            "pregunta": pregunta,
+            "modo": mensaje.get("modo"),
+            "spec": mensaje.get("spec"),
+        },
+        sort_keys=True,
+        default=str,
+    )
+    st.plotly_chart(
+        fig,
+        width="stretch",
+        theme=None,
+        key=f"chat_plot_{indice_mensaje}_{abs(hash(key_base)) % 100000000}",
+    )
     mostrar_procedimiento(
         construir_procedimiento_grafico_chat(
             mensaje,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
-            estados_seleccionados=estados_seleccionados,
+            df_master=df_master_uso,
+            anios_seleccionados=anios_uso,
+            estados_seleccionados=estados_uso or estados_seleccionados,
             sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
+            delito_master=delito_uso,
         ),
         titulo="Ver procedimiento de la gráfica",
     )
@@ -3325,30 +3537,48 @@ def mostrar_tabla_chat(
     estados_seleccionados,
     sexo_percepcion,
     delito_master,
+    indice_mensaje=None,
 ):
     tipo = mensaje.get("tipo", "tabla")
     pregunta = mensaje.get("pregunta", "")
+    (
+        df_filtrado_uso,
+        _df_total_uso,
+        df_master_uso,
+        anios_uso,
+        estados_uso,
+        delito_uso,
+    ) = preparar_datos_chat_por_pregunta(
+        pregunta,
+        df_filtrado=df_filtrado,
+        df_total=df_filtrado[df_filtrado["Sexo"] == "Total"].copy(),
+        df_master=df_master,
+        anios_seleccionados=anios_seleccionados,
+        delito_master=delito_master,
+    )
 
     if tipo == "calculo":
         tabla, nota = construir_calculo_chat(
             pregunta,
-            df_master=df_master,
-            df_filtrado=df_filtrado,
-            anios_seleccionados=anios_seleccionados,
+            df_master=df_master_uso,
+            df_filtrado=df_filtrado_uso,
+            anios_seleccionados=anios_uso,
         )
     else:
         tabla, nota = construir_tabla_chat(
             pregunta,
-            df_master=df_master,
-            df_filtrado=df_filtrado,
-            anios_seleccionados=anios_seleccionados,
-            delito_master=delito_master,
+            df_master=df_master_uso,
+            df_filtrado=df_filtrado_uso,
+            anios_seleccionados=anios_uso,
+            delito_master=delito_uso,
         )
 
     nota = mensaje.get("nota") or nota
     if tabla is None or tabla.empty:
         st.info(nota or "No pude construir la tabla con los filtros actuales.")
         return
+    if pregunta_pide_todos_estados(pregunta) and "Se usaron todos los estados disponibles" not in nota:
+        nota = f"{nota} Se usaron todos los estados disponibles, no solo la selección lateral."
 
     st.markdown(
         f'<div class="generated-chart-note">{html.escape(nota)}</div>',
@@ -3370,18 +3600,18 @@ def mostrar_tabla_chat(
         data=tabla.to_csv(index=False).encode("utf-8"),
         file_name=f"consulta_ia_{tipo}.csv",
         mime="text/csv",
-        key=f"download_{tipo}_{abs(hash(json.dumps(mensaje, sort_keys=True, default=str))) % 100000000}",
+        key=f"download_{tipo}_{indice_mensaje}_{abs(hash(json.dumps(mensaje, sort_keys=True, default=str))) % 100000000}",
     )
     mostrar_procedimiento(
         construir_procedimiento_tabla_chat(
             pregunta=pregunta,
             tipo=tipo,
-            df_master=df_master,
-            df_filtrado=df_filtrado,
-            anios_seleccionados=anios_seleccionados,
-            estados_seleccionados=estados_seleccionados,
+            df_master=df_master_uso,
+            df_filtrado=df_filtrado_uso,
+            anios_seleccionados=anios_uso,
+            estados_seleccionados=estados_uso or estados_seleccionados,
             sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
+            delito_master=delito_uso,
         ),
         titulo="Ver procedimiento de la tabla" if tipo != "calculo" else "Ver procedimiento del cálculo",
     )
@@ -4845,7 +5075,7 @@ if artefactos_chat_specs and not any(mensaje.get("role") == "table" for mensaje 
             "nota": item_tabla.get("nota"),
         })
 
-for mensaje in historial_chat:
+for indice_mensaje, mensaje in enumerate(historial_chat):
     if mensaje.get("role") == "chart":
         mostrar_grafico_chat(
             mensaje,
@@ -4856,6 +5086,7 @@ for mensaje in historial_chat:
             estados_seleccionados=estados_seleccionados,
             sexo_percepcion=sexo_percepcion,
             delito_master=delito_master,
+            indice_mensaje=indice_mensaje,
         )
     elif mensaje.get("role") == "table":
         mostrar_tabla_chat(
@@ -4866,6 +5097,7 @@ for mensaje in historial_chat:
             estados_seleccionados=estados_seleccionados,
             sexo_percepcion=sexo_percepcion,
             delito_master=delito_master,
+            indice_mensaje=indice_mensaje,
         )
     else:
         mostrar_mensaje_chat(mensaje)
@@ -4888,10 +5120,49 @@ if pregunta_pendiente:
             st.session_state["ai_autoscroll_ready"] = True
             st.rerun()
         else:
+            (
+                df_filtrado_chat,
+                df_total_chat,
+                df_master_chat,
+                anios_chat,
+                estados_chat,
+                delito_chat,
+            ) = preparar_datos_chat_por_pregunta(
+                pregunta_pendiente,
+                df_filtrado=df_filtrado,
+                df_total=df_total,
+                df_master=df_master,
+                anios_seleccionados=anios_seleccionados,
+                delito_master=delito_master,
+            )
+            contexto_respuesta_chat = st.session_state.get("analisis_ia_contexto_actual", "")
+            if pregunta_pide_todos_estados(pregunta_pendiente) or anios_mencionados_en_texto(pregunta_pendiente):
+                contexto_respuesta_chat = "\n".join([
+                    construir_contexto_ia(
+                        df_filtrado=df_filtrado_chat,
+                        df_master=df_master_chat,
+                        anios_seleccionados=anios_chat,
+                        estados_seleccionados=estados_chat,
+                        sexo_seleccionado=sexo_percepcion,
+                        delito_master=delito_chat,
+                    ),
+                    construir_contexto_datos_dashboard(
+                        df_filtrado=df_filtrado_chat,
+                        df_total=df_total_chat,
+                        df_master=df_master_chat,
+                        anios_seleccionados=anios_chat,
+                        sexo_percepcion=sexo_percepcion,
+                        delito_master=delito_chat,
+                    ),
+                    (
+                        "Instrucción de alcance: si la pregunta pide todos los estados, "
+                        "responde usando todos los estados disponibles aunque la barra lateral tenga pocos seleccionados."
+                    ),
+                ])
             try:
                 respuesta_chat = responder_chat_ia(
                     modelo=modelo_ia_chat,
-                    contexto=st.session_state.get("analisis_ia_contexto_actual", ""),
+                    contexto=contexto_respuesta_chat,
                     analisis=st.session_state.get(
                         "analisis_ia",
                         "Aún no se ha generado reporte ejecutivo; responde con el contexto estadístico actual."
@@ -4917,13 +5188,18 @@ if pregunta_pendiente:
 
         fig_chat, nota_chat = crear_grafico_desde_pregunta(
             pregunta=pregunta_pendiente,
-            df_filtrado=df_filtrado,
-            df_total=df_total,
-            df_master=df_master,
-            anios_seleccionados=anios_seleccionados,
+            df_filtrado=df_filtrado_chat,
+            df_total=df_total_chat,
+            df_master=df_master_chat,
+            anios_seleccionados=anios_chat,
             sexo_percepcion=sexo_percepcion,
-            delito_master=delito_master,
+            delito_master=delito_chat,
         )
+        if fig_chat is not None and pregunta_pide_todos_estados(pregunta_pendiente):
+            nota_chat = (
+                (nota_chat or "Gráfico generado desde el chat.")
+                + " Se usaron todos los estados disponibles, no solo la selección lateral."
+            )
 
         spec_grafico = None
         modo_grafico = "pregunta"
@@ -4936,17 +5212,22 @@ if pregunta_pendiente:
                 spec_grafico = solicitar_especificacion_grafico_ia(
                     modelo=modelo_ia_chat,
                     pregunta=pregunta_para_spec,
-                    contexto=st.session_state.get("analisis_ia_contexto_actual", ""),
+                    contexto=contexto_respuesta_chat,
                 )
                 fig_chat, nota_chat = crear_grafico_desde_spec_ia(
                     spec=spec_grafico,
-                    df_filtrado=df_filtrado,
-                    df_total=df_total,
-                    df_master=df_master,
-                    anios_seleccionados=anios_seleccionados,
+                    df_filtrado=df_filtrado_chat,
+                    df_total=df_total_chat,
+                    df_master=df_master_chat,
+                    anios_seleccionados=anios_chat,
                     sexo_percepcion=sexo_percepcion,
-                    delito_master=delito_master,
+                    delito_master=delito_chat,
                 )
+                if fig_chat is not None and pregunta_pide_todos_estados(pregunta_pendiente):
+                    nota_chat = (
+                        (nota_chat or "Gráfico generado por IA con especificación validada.")
+                        + " Se usaron todos los estados disponibles, no solo la selección lateral."
+                    )
                 modo_grafico = "spec"
             except Exception as error:
                 nota_chat = f"No pude convertir la solicitud en un gráfico válido: {error}"
@@ -4974,17 +5255,22 @@ if pregunta_pendiente:
             if tipo_artefacto == "calculo":
                 tabla_ia, nota_tabla = construir_calculo_chat(
                     pregunta_pendiente,
-                    df_master=df_master,
-                    df_filtrado=df_filtrado,
-                    anios_seleccionados=anios_seleccionados,
+                    df_master=df_master_chat,
+                    df_filtrado=df_filtrado_chat,
+                    anios_seleccionados=anios_chat,
                 )
             else:
                 tabla_ia, nota_tabla = construir_tabla_chat(
                     pregunta_pendiente,
-                    df_master=df_master,
-                    df_filtrado=df_filtrado,
-                    anios_seleccionados=anios_seleccionados,
-                    delito_master=delito_master,
+                    df_master=df_master_chat,
+                    df_filtrado=df_filtrado_chat,
+                    anios_seleccionados=anios_chat,
+                    delito_master=delito_chat,
+                )
+            if tabla_ia is not None and not tabla_ia.empty and pregunta_pide_todos_estados(pregunta_pendiente):
+                nota_tabla = (
+                    (nota_tabla or "Tabla generada desde el chat.")
+                    + " Se usaron todos los estados disponibles, no solo la selección lateral."
                 )
 
             if tabla_ia is not None and not tabla_ia.empty:
