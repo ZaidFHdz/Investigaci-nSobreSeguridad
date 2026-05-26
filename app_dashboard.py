@@ -1,6 +1,7 @@
 import streamlit as st
 import html
 import json
+import os
 import re
 import numpy as np
 import pandas as pd
@@ -1487,10 +1488,34 @@ def normalizar_entidades(df):
 
 
 def obtener_gemini_api_key():
+    clave = ""
     try:
-        return st.secrets.get("GEMINI_API_KEY", "")
+        clave = st.secrets.get("GEMINI_API_KEY", "")
     except Exception:
-        return ""
+        clave = ""
+
+    if not clave:
+        clave = os.environ.get("GEMINI_API_KEY", "")
+
+    return str(clave).strip()
+
+
+def mensaje_error_gemini(api_key):
+    if genai is None:
+        return (
+            "No se pudo conectar con Gemini porque falta el paquete "
+            "`google-generativeai` en el entorno donde corre Streamlit."
+        )
+    if not api_key:
+        return (
+            "No se encontró `GEMINI_API_KEY`. Crea `.streamlit/secrets.toml` con "
+            "`GEMINI_API_KEY = \"tu_api_key\"` o define la variable de entorno "
+            "`GEMINI_API_KEY` antes de iniciar Streamlit."
+        )
+    return (
+        "Gemini recibió una API key, pero no pudo inicializar el modelo. "
+        "Revisa que la key sea válida, que tenga acceso a Gemini API y que no tenga espacios extra."
+    )
 
 
 @st.cache_resource
@@ -4579,13 +4604,11 @@ st.markdown(
 )
 
 if st.button("Generar análisis con IA", type="primary"):
-    modelo_ia = cargar_modelo_ia(obtener_gemini_api_key())
+    gemini_api_key = obtener_gemini_api_key()
+    modelo_ia = cargar_modelo_ia(gemini_api_key)
 
     if modelo_ia is None:
-        st.error(
-            "No se pudo configurar Gemini. Revisa que google-generativeai esté instalado "
-            "y que la API key sea válida."
-        )
+        st.error(mensaje_error_gemini(gemini_api_key))
     else:
         contexto_ia = construir_contexto_ia(
             df_filtrado=df_filtrado,
@@ -4710,13 +4733,15 @@ if pregunta_pendiente:
             "content": "Analizando los datos actuales del tablero..."
         })
 
-        modelo_ia_chat = cargar_modelo_ia(obtener_gemini_api_key())
+        gemini_api_key_chat = obtener_gemini_api_key()
+        modelo_ia_chat = cargar_modelo_ia(gemini_api_key_chat)
 
         if modelo_ia_chat is None:
-            respuesta_chat = (
-                "No pude conectar con Gemini. Revisa la instalación de google-generativeai "
-                "y la API key."
-            )
+            respuesta_chat = mensaje_error_gemini(gemini_api_key_chat)
+            historial_chat.append({"role": "assistant", "content": respuesta_chat})
+            st.session_state.pop("pregunta_ia_pendiente", None)
+            st.session_state["ai_autoscroll_ready"] = True
+            st.rerun()
         else:
             try:
                 respuesta_chat = responder_chat_ia(
