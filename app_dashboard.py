@@ -17,7 +17,7 @@ except ImportError:
 
 ESTADO_DASHBOARD = Path(".dashboard_state.json")
 ARCHIVO_DATOS = Path("REPORTE_LIMPIO_FINAL.parquet")
-APP_VERSION = "V1.13"
+APP_VERSION = "V1.14"
 
 CONTEXTO_CONCEPTUAL_SEGURIDAD = """
 Contexto conceptual fijo para interpretar el tablero:
@@ -1207,6 +1207,19 @@ PALETA_SEXO = {
     "Mujeres": COLOR_TERCIARIO,
 }
 
+METRICAS_PORCENTAJE = {
+    "Percepcion",
+    "Cifra_Negra",
+    "ENV_Estimaciones puntuales",
+    "Porcentaje",
+}
+
+METRICAS_TASA = {
+    "Incidencia_Especifica",
+    "Incidencia_General",
+    "Tasa_Incidencia",
+}
+
 
 def paleta_entidades(df, columna="Entidad federativa"):
     cantidad = df[columna].nunique(dropna=True) if columna in df.columns else 0
@@ -1267,6 +1280,27 @@ def aplicar_estilo_figura(fig, altura=None):
     )
     if altura:
         fig.update_layout(height=altura)
+    return fig
+
+
+def aplicar_formato_unidad(fig, metrica, eje="y"):
+    if metrica in METRICAS_PORCENTAJE:
+        formato = dict(ticksuffix="%", tickformat=".1f")
+    elif metrica in METRICAS_TASA:
+        formato = dict(tickformat=",.0f")
+    else:
+        return fig
+
+    if eje == "x":
+        fig.update_xaxes(**formato)
+    else:
+        fig.update_yaxes(**formato)
+    return fig
+
+
+def aplicar_formato_ejes_cruce(fig, eje_x=None, eje_y=None):
+    aplicar_formato_unidad(fig, eje_x, "x")
+    aplicar_formato_unidad(fig, eje_y, "y")
     return fig
 
 
@@ -2057,8 +2091,8 @@ def etiquetas_metricas_cruce():
     return {
         "Percepcion": "Percepción de inseguridad (%)",
         "Cifra_Negra": "Cifra Negra (%)",
-        "Incidencia_Especifica": "Incidencia Específica",
-        "Incidencia_General": "Incidencia General",
+        "Incidencia_Especifica": "Incidencia Específica (tasa por 100 mil hab.)",
+        "Incidencia_General": "Incidencia General (tasa por 100 mil hab.)",
     }
 
 
@@ -2449,6 +2483,7 @@ def grafico_ranking_entidades_chat(df_master, texto, titulo=None):
         color_discrete_sequence=paleta_entidades(df_rank),
     )
     aplicar_estilo_figura(fig, altura=max(460, 28 * len(df_rank) + 120))
+    aplicar_formato_unidad(fig, metrica, "x")
     fig.update_layout(showlegend=False, margin=dict(l=170, r=42, t=64, b=54))
     fig.update_yaxes(autorange="reversed", automargin=True)
     return fig, "Barras generadas con promedios por entidad para los filtros actuales."
@@ -2539,6 +2574,7 @@ def grafico_histograma_chat(df_master, texto, titulo=None):
         color_discrete_sequence=[COLOR_ACENTO],
     )
     aplicar_estilo_figura(fig)
+    aplicar_formato_unidad(fig, metrica, "x")
     return fig, "Histograma generado con los registros cruzados filtrados."
 
 
@@ -2569,8 +2605,8 @@ def grafico_sexo_envipe_chat(df_filtrado, anios_seleccionados, titulo=None):
         labels={"ENV_Estimaciones puntuales": "% de Inseguridad"},
         color_discrete_map=PALETA_SEXO,
     )
-    fig.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig)
+    aplicar_formato_unidad(fig, "ENV_Estimaciones puntuales")
     return fig, "Comparación por sexo generada con ENVIPE filtrado."
 
 
@@ -2614,19 +2650,43 @@ def grafico_lineas_incidencia_cifra_general_chat(df_total, anios_seleccionados, 
     if df_plot.empty or df_plot["Año"].nunique() < 2:
         return None, "No hay suficientes años para comparar incidencia general y cifra negra general."
 
-    df_plot["Serie"] = df_plot["Entidad federativa"] + " | " + df_plot["Variable"]
-    fig = px.line(
-        df_plot.sort_values(["Entidad federativa", "Variable", "Año"]),
-        x="Año",
-        y="Valor",
-        color="Entidad federativa",
-        line_dash="Variable",
-        markers=True,
+    colores = paleta_entidades(df_plot)
+    entidades = sorted(df_plot["Entidad federativa"].dropna().unique())
+    mapa_colores = {
+        entidad: colores[indice % len(colores)]
+        for indice, entidad in enumerate(entidades)
+    }
+    fig = go.Figure()
+    for entidad in entidades:
+        df_entidad = df_plot[df_plot["Entidad federativa"] == entidad].sort_values("Año")
+        color = mapa_colores[entidad]
+        for variable, eje, guion in [
+            ("Cifra Negra General", "y", "solid"),
+            ("Incidencia General", "y2", "dash"),
+        ]:
+            df_serie = df_entidad[df_entidad["Variable"] == variable]
+            if df_serie.empty:
+                continue
+            fig.add_trace(go.Scatter(
+                x=df_serie["Año"],
+                y=df_serie["Valor"],
+                name=f"{entidad} | {variable}",
+                mode="lines+markers",
+                yaxis=eje,
+                line=dict(color=color, dash=guion),
+            ))
+    fig.update_layout(
         title=titulo or "Incidencia General Y Cifra Negra General Por Estado",
-        labels={"Valor": "Valor", "Variable": "Variable"},
-        color_discrete_sequence=paleta_entidades(df_plot),
+        yaxis=dict(title="Cifra Negra General (%)", ticksuffix="%", tickformat=".1f"),
+        yaxis2=dict(
+            title="Incidencia General (tasa por 100 mil hab.)",
+            tickformat=",.0f",
+            overlaying="y",
+            side="right",
+        ),
     )
     aplicar_estilo_figura(fig)
+    fig.update_layout(margin=dict(l=72, r=110, t=64, b=58))
     ajustar_legenda_larga(fig, df_plot)
     return fig, "Líneas generadas con incidencia general y cifra negra general, no por delito específico."
 
@@ -2668,6 +2728,7 @@ def grafico_relacion_cruce_chat(df_master, texto, titulo=None):
         opacity=0.78,
     )
     aplicar_estilo_figura(fig)
+    aplicar_formato_ejes_cruce(fig, x, y)
     ajustar_legenda_larga(fig, df_master)
     return fig, "Dispersión generada con el cruce 360 filtrado."
 
@@ -2744,6 +2805,7 @@ def grafico_generico_cruce_chat(df_master, texto, tipo="linea", titulo=None):
                 color_discrete_sequence=paleta_entidades(df_master) if categoria else PALETA_NEUTRA,
             )
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, metrica)
         ajustar_legenda_larga(fig, df_master)
         return fig, "Distribución generada con los registros cruzados filtrados."
 
@@ -2768,6 +2830,7 @@ def grafico_generico_cruce_chat(df_master, texto, tipo="linea", titulo=None):
             color_discrete_sequence=paleta_entidades(df_plot) if color else PALETA_NEUTRA,
         )
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, metrica)
         ajustar_legenda_larga(fig, df_plot)
         return fig, "Área generada con promedios por año."
 
@@ -2796,6 +2859,7 @@ def grafico_generico_cruce_chat(df_master, texto, tipo="linea", titulo=None):
             color_discrete_sequence=paleta_entidades(df_plot, categoria) if categoria == "Entidad federativa" else PALETA_NEUTRA,
         )
         aplicar_estilo_figura(fig, altura=max(460, 28 * len(df_plot) + 120))
+        aplicar_formato_unidad(fig, metrica, "x")
         fig.update_layout(showlegend=False, margin=dict(l=180, r=48, t=64, b=58))
         fig.update_yaxes(autorange="reversed", automargin=True)
         return fig, "Barras generadas con promedios de los filtros actuales."
@@ -2848,10 +2912,12 @@ def grafico_generico_cruce_chat(df_master, texto, tipo="linea", titulo=None):
             labels=etiquetas,
             color_discrete_sequence=paleta_entidades(df_plot) if color else PALETA_NEUTRA,
         )
-        if metrica in {"Percepcion", "Cifra_Negra"}:
-            fig.update_layout(yaxis_ticksuffix="%")
 
     aplicar_estilo_figura(fig)
+    if len(metricas) == 1:
+        aplicar_formato_unidad(fig, metricas[0])
+    elif all(metrica in METRICAS_PORCENTAJE for metrica in metricas):
+        aplicar_formato_unidad(fig, "Porcentaje")
     ajustar_legenda_larga(fig, df_plot)
     return fig, "Línea temporal generada con los datos cruzados filtrados."
 
@@ -3217,8 +3283,8 @@ def crear_grafico_desde_pregunta(
             labels={"ENV_Estimaciones puntuales": "% de Inseguridad"},
             color_discrete_sequence=paleta_entidades(df_env),
         )
-        fig.update_layout(yaxis_ticksuffix="%")
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, "ENV_Estimaciones puntuales")
         ajustar_legenda_larga(fig, df_env)
         return fig, "Gráfico generado desde el chat: evolución de percepción ENVIPE."
 
@@ -3253,8 +3319,8 @@ def crear_grafico_desde_pregunta(
             labels={"Valor": "% Cifra Negra"},
             color_discrete_sequence=paleta_entidades(df_cn_chat),
         )
-        fig.update_layout(yaxis_ticksuffix="%")
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, "Cifra_Negra")
         ajustar_legenda_larga(fig, df_cn_chat)
         return fig, f"Gráfico generado desde el chat: cifra negra para {delito}."
 
@@ -3268,10 +3334,12 @@ def crear_grafico_desde_pregunta(
                 color="Entidad federativa",
                 hover_data=["Año", "Incidencia_General"],
                 title=f"Incidencia Específica vs Cifra Negra ({delito_master})",
+                labels=etiquetas_metricas_cruce(),
                 color_discrete_sequence=paleta_entidades(df_master),
                 opacity=0.78,
             )
             aplicar_estilo_figura(fig)
+            aplicar_formato_ejes_cruce(fig, "Incidencia_Especifica", "Cifra_Negra")
             ajustar_legenda_larga(fig, df_master)
             return fig, "Gráfico generado desde el chat: relación de incidencia específica, cifra negra y percepción."
 
@@ -3298,10 +3366,11 @@ def crear_grafico_desde_pregunta(
             color="Entidad federativa",
             markers=True,
             title="Incidencia General Estatal",
-            labels={"Tasa_Incidencia": "Tasa por 100k hab."},
+            labels={"Tasa_Incidencia": "Tasa por 100 mil hab."},
             color_discrete_sequence=paleta_entidades(df_ie_chat),
         )
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, "Tasa_Incidencia")
         ajustar_legenda_larga(fig, df_ie_chat)
         return fig, "Gráfico generado desde el chat: incidencia general por año."
 
@@ -3472,10 +3541,11 @@ def crear_grafico_desde_spec_ia(
                 labels={"ENV_Estimaciones puntuales": "% de Inseguridad"},
                 color_discrete_sequence=paleta_entidades(df_plot),
             )
-            fig.update_layout(yaxis_ticksuffix="%")
             ajustar_legenda_larga(fig, df_plot)
 
         aplicar_estilo_figura(fig)
+        if dataset == "envipe":
+            aplicar_formato_unidad(fig, "ENV_Estimaciones puntuales")
         return fig, "Gráfico generado por IA con especificación validada: ENVIPE."
 
     if dataset == "cifra_negra":
@@ -3508,8 +3578,8 @@ def crear_grafico_desde_spec_ia(
             labels={"Valor": "% Cifra Negra"},
             color_discrete_sequence=paleta_entidades(df_plot),
         )
-        fig.update_layout(yaxis_ticksuffix="%")
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, "Cifra_Negra")
         ajustar_legenda_larga(fig, df_plot)
         return fig, "Gráfico generado por IA con especificación validada: cifra negra."
 
@@ -3537,10 +3607,11 @@ def crear_grafico_desde_spec_ia(
             color="Entidad federativa",
             markers=True,
             title=titulo,
-            labels={"Tasa_Incidencia": "Tasa por 100k hab."},
+            labels={"Tasa_Incidencia": "Tasa por 100 mil hab."},
             color_discrete_sequence=paleta_entidades(df_plot),
         )
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, "Tasa_Incidencia")
         ajustar_legenda_larga(fig, df_plot)
         return fig, "Gráfico generado por IA con especificación validada: incidencia general."
 
@@ -3566,10 +3637,11 @@ def crear_grafico_desde_spec_ia(
             color="Entidad federativa",
             markers=True,
             title=titulo,
-            labels={"Incidencia_Especifica": "Incidencia Específica"},
+            labels={"Incidencia_Especifica": "Incidencia Específica (tasa por 100 mil hab.)"},
             color_discrete_sequence=paleta_entidades(df_plot),
         )
         aplicar_estilo_figura(fig)
+        aplicar_formato_unidad(fig, "Incidencia_Especifica")
         ajustar_legenda_larga(fig, df_plot)
         return fig, "Gráfico generado por IA con especificación validada: incidencia específica."
 
@@ -3599,10 +3671,12 @@ def crear_grafico_desde_spec_ia(
             size=tamano,
             hover_data=["Entidad federativa", "Año"],
             title=titulo,
+            labels=etiquetas_metricas_cruce(),
             color_discrete_sequence=paleta_entidades(df_master) if color == "Entidad federativa" else None,
             opacity=0.78,
         )
         aplicar_estilo_figura(fig)
+        aplicar_formato_ejes_cruce(fig, x, y)
         ajustar_legenda_larga(fig, df_master)
         return fig, "Gráfico generado por IA con especificación validada: cruce 360."
 
@@ -4306,8 +4380,8 @@ if (
         color_discrete_sequence=paleta_entidades(df_inseguro),
     )
 
-    fig_envipe.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig_envipe)
+    aplicar_formato_unidad(fig_envipe, "ENV_Estimaciones puntuales")
     ajustar_legenda_larga(fig_envipe, df_inseguro)
     st.plotly_chart(fig_envipe, width="stretch", theme=None)
 else:
@@ -4354,8 +4428,8 @@ if not df_sexo_env.empty and "ENV_Estimaciones puntuales" in df_sexo_env.columns
             color_discrete_map=PALETA_SEXO,
         )
 
-    fig_sexo.update_layout(yaxis_ticksuffix="%")
     aplicar_estilo_figura(fig_sexo)
+    aplicar_formato_unidad(fig_sexo, "ENV_Estimaciones puntuales")
     st.plotly_chart(fig_sexo, width="stretch", theme=None)
 
 # --- SECCION 2: CIFRA NEGRA ---
@@ -4413,8 +4487,8 @@ if cols_cn:
                 color_discrete_sequence=paleta_entidades(df_cn_plot),
             )
 
-            fig_cn.update_layout(yaxis_ticksuffix="%")
             aplicar_estilo_figura(fig_cn)
+            aplicar_formato_unidad(fig_cn, "Cifra_Negra")
             ajustar_legenda_larga(fig_cn, df_cn_plot)
             st.plotly_chart(fig_cn, width="stretch", theme=None)
         else:
@@ -4469,11 +4543,12 @@ if "IE" in nivel_incidencia:
                 color="Entidad federativa",
                 markers=True,
                 title="Evolución de la Tasa de Incidencia General (IE)",
-                labels={"Tasa_Incidencia": "Tasa por 100k hab."},
+                labels={"Tasa_Incidencia": "Tasa por 100 mil hab."},
                 color_discrete_sequence=paleta_entidades(df_ie),
             )
 
             aplicar_estilo_figura(fig_ie)
+            aplicar_formato_unidad(fig_ie, "Tasa_Incidencia")
             ajustar_legenda_larga(fig_ie, df_ie)
             st.plotly_chart(fig_ie, width="stretch", theme=None)
         else:
@@ -4536,11 +4611,12 @@ else:
                     color="Entidad federativa",
                     markers=True,
                     title=f"Incidencia Específica: {delito_sel_itd} (ITD)",
-                    labels={"Tasa_Incidencia": "Tasa por 100k hab."},
+                    labels={"Tasa_Incidencia": "Tasa por 100 mil hab."},
                     color_discrete_sequence=paleta_entidades(df_itd_plot),
                 )
 
                 aplicar_estilo_figura(fig_itd)
+                aplicar_formato_unidad(fig_itd, "Tasa_Incidencia")
                 ajustar_legenda_larga(fig_itd, df_itd_plot)
                 st.plotly_chart(fig_itd, width="stretch", theme=None)
         else:
@@ -4718,17 +4794,18 @@ if cols_ie and cols_cn and cols_itd:
                 hover_data=["Año", "Incidencia_General"],
                 title=f"Relación Multivariable - {delito_master}",
                 labels={
-                    "Incidencia_Especifica": "Incidencia Específica",
+                    "Incidencia_Especifica": "Incidencia Específica (tasa por 100 mil hab.)",
                     "Cifra_Negra": "Cifra Negra (%)",
                     "Percepcion": "Percepción De Inseguridad (%)",
+                    "Incidencia_General": "Incidencia General (tasa por 100 mil hab.)",
                 },
                 color_discrete_sequence=paleta_entidades(df_master),
                 opacity=0.78,
                 size_max=30 if df_master["Entidad federativa"].nunique() > 3 else 40,
             )
 
-            fig_bubble.update_layout(yaxis_ticksuffix="%")
             aplicar_estilo_figura(fig_bubble)
+            aplicar_formato_ejes_cruce(fig_bubble, "Incidencia_Especifica", "Cifra_Negra")
             fig_bubble.update_traces(marker=dict(line=dict(width=0.8, color=COLOR_PANEL)))
             fig_bubble.update_layout(margin=dict(l=68, r=34, t=62, b=72))
             ajustar_legenda_larga(fig_bubble, df_master)
@@ -4764,8 +4841,8 @@ if cols_ie and cols_cn and cols_itd:
                     color_discrete_sequence=[COLOR_ACENTO, COLOR_SECUNDARIO]
                 )
 
-                fig_bar.update_layout(yaxis_ticksuffix="%")
                 aplicar_estilo_figura(fig_bar)
+                aplicar_formato_unidad(fig_bar, "Porcentaje")
                 fig_bar.update_layout(
                     margin=dict(l=58, r=26, t=62, b=90),
                     legend=dict(
@@ -4857,7 +4934,7 @@ if cols_ie and cols_cn and cols_itd:
                 fig_lines.add_trace(go.Scatter(
                     x=df_lineas["Año"],
                     y=df_lineas["Incidencia_Especifica"],
-                    name="Incidencia Específica (Tasa)",
+                    name="Incidencia Específica (tasa por 100 mil hab.)",
                     mode="lines+markers",
                     yaxis="y2",
                     line=dict(color=COLOR_SECUNDARIO, width=3)
@@ -4875,7 +4952,7 @@ if cols_ie and cols_cn and cols_itd:
                     ),
                     yaxis2=dict(
                         title=dict(
-                            text="Tasa",
+                            text="Tasa por 100 mil hab.",
                             font=dict(color=COLOR_SECUNDARIO)
                         ),
                         tickfont=dict(color=COLOR_SECUNDARIO),
@@ -4908,8 +4985,8 @@ if cols_ie and cols_cn and cols_itd:
             metricas_correlacion = {
                 "Percepcion": "Percepción de inseguridad (%)",
                 "Cifra_Negra": "Cifra Negra (%)",
-                "Incidencia_Especifica": "Incidencia Específica",
-                "Incidencia_General": "Incidencia General"
+                "Incidencia_Especifica": "Incidencia Específica (tasa por 100 mil hab.)",
+                "Incidencia_General": "Incidencia General (tasa por 100 mil hab.)"
             }
 
             col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
@@ -5116,6 +5193,7 @@ if cols_ie and cols_cn and cols_itd:
                 ))
 
                 aplicar_estilo_figura(fig_scatter_corr)
+                aplicar_formato_ejes_cruce(fig_scatter_corr, eje_x, eje_y)
                 fig_scatter_corr.update_traces(
                     selector=dict(mode="markers"),
                     marker=dict(line=dict(width=0.8, color=COLOR_PANEL))
